@@ -3853,3 +3853,76 @@ energy-transition timing once the electrification channel exists.
 **What the next task can assume:** M5 is a **partial** PASS awaiting explicit
 user sign-off before M6. Per the no-auto-advance rule, M6 does not start until
 sign-off. A FULL M5 is a milestone-sized effort (the §5 checklist), not a patch.
+---
+
+## FULL M5 — plan extension + Task 5.7.1 design (in progress)
+
+**Date:** 2026-05-29. **User decision:** go for FULL M5 (close the partial 5.7 gate).
+
+**Plan extension (IMPLEMENTATION_PLAN.md, Milestone 5):** added the FULL-gate
+extension with explicit model tags — **5.7.1** port firm-side energy-axis
+innovation (**Opus**), **5.7.2** carbon-tax revenue routing `t_CO2_use[]`
+(**Sonnet**), **5.7.3** compile C++ `files_BCERT` references for Figs 3/4/5
+(**Sonnet**), **5.8** FULL M5 verification gate (**Opus**, depends 5.7.1–5.7.3).
+The original Task 5.7 is retitled the completed PARTIAL gate; the FULL gate's
+original acceptance (all Figs 1–5, ranking + within-20%) moved to 5.8.
+
+**Task 5.7.1 design (research complete; C++ TECHANGEND dsk_main.cpp:7155-7823).**
+
+*Axis → Python state map:*
+- `A1`  → `firm.machine_labour_prod`; `A1p` → `firm.process_labour_prod`
+- `A1_en` (EE, machine energy need) → `current_technology.energy_efficiency`
+- `A1p_en` (EEp, process energy need) → `firm.process_energy_need`
+- `A1_ef` (EF, machine env filth) → `current_technology.env_cleanliness`
+- `A1p_ef` (EFp, process env filth) → `firm.process_env_filthiness`
+- `A1p_el` (ELp, electrification frac) → `current_technology.electrification_fraction`
+  (single axis — there is no `A1_el`; only `A1p_el` updates on commit).
+
+*R&D split (7257-7288):* `RDin = Ld1rd*xi` (real-RD baseline); `RDin1 = RDin*xin`
+(energy), `RDin2 = RDin*(1-xin)` (labour). **`xin = xin0 = 0.07` constant** in
+baseline (`xin1=0` makes the endogenous xin update at 7727-7755 a no-op — skip
+it). Emergency split when `elfrac_reg_exp > A1p_el`: `RDin1=RDin*0.2`,
+`RDin2=RDin*0.8`. Spin-up override (`flag_spinup_innov==0 && t<t_spinup`):
+`RDin2=RDin`, `RDin1=0` (no energy innovation during spin-up).
+
+*Two innovation Bernoulli trials:* `Inn1` (energy) p=(1-exp(-o11*RDin1))*probinim,
+`o11=0.6`; `Inn2` (labour) p=(1-exp(-o12*RDin2))*probinim, `o12=0.15` (existing).
+(The current Python's `rd_inn_labour` hack ≈ xin=0 / emergency 0.8 — to be
+replaced by the real RDin1/RDin2 split.)
+
+*Energy-axis innovation draws (Inn1==1, 7335-7434), all rnd=Beta(b_a1,b_b1) rescaled:*
+- EEp_inn = `A1p_en_limlow + (A1p_en - A1p_en_limlow)*(1-rnd)`, rnd∈(uu1_eep,uu2_eep)=±0.15, floor limlow
+- EFp_inn = `A1p_ef_limlow + (A1p_ef - A1p_ef_limlow)*(1-rnd)`, rnd∈(uu1_efp,uu2_efp)=±0.05, floor 0
+- ELp_inn = `A1p_el + rnd` (ADDITIVE), rnd∈(uu1_elp,uu2_elp)=±0.15, clamp[0,1]; if A1p_el==1 stays 1 (flag_fuel_to_elec_inn=0 baseline)
+- EE_inn  = `A1_en_limlow + (A1_en - A1_en_limlow)*(1-rnd)`, rnd∈(uu1_ee,uu2_ee)=±0.15, floor limlow
+- EF_inn  = `A1_ef_limlow + (A1_ef - A1_ef_limlow)*(1-rnd)`, rnd∈(uu1_ef,uu2_ef)=±0.05, floor 0
+- if Inn1==0: all energy candidates = current values.
+
+*Constants (dsk_constant.h):* o11=0.6; xin0=0.07; A1p_el_limlow=0, A1p_el_limupp=1;
+A1p_en_limlow=A0_en*A0_en_sect1fac/2; A1_en_limlow=A0_en/4; A1p_ef_limlow=0,
+A1_ef_limlow=0; uu1/uu2 eep=±0.15, ee=±0.15, efp/ef=±0.05, elp=±0.15.
+flag_fuel_to_elec_inn=0.
+
+*Imitation (7515-7567):* technological distance Td adds energy terms (each
+`(axis_ii-axis_i)^2 / top^2`; ef/el denominators add `0.1*A0_*` to avoid /0);
+on selection copy ALL axes (EE/EEp/EF/EFp/ELp) from the victim.
+
+*Commit decision (7610-7725):* candidate `*_inn`/`*_imm` is a FULL bundle
+(labour + 5 energy axes). One lifetime-cost compare per bundle:
+`(1+mi1)*cost_sect1(...) + b*cost_sect2(...)` with the candidate's energy axes
+(the existing `_lifetime` already computes this; generalise it to take the
+candidate energy axes instead of inheriting current). Imitation evaluated first,
+then innovation may override. On accept, ALL axes update together.
+
+*Sector frontier tops (7796-7823) — needed for Td:* A1top/A1ptop = MAX (existing);
+A1_en_top/A1p_en_top/A1_ef_top/A1p_ef_top = **MIN** (lower is better);
+A1p_el_top = **MAX**. Add these 5 to `CapitalGoodSector.update_frontier()` and
+pass them into `firm.advance_technology()`.
+
+*Files to touch:* `dsk/parameters/global_parameters.py` (+~13 fields),
+`dsk/agents/capital_good_firm.py` (advance_technology energy axes),
+`dsk/sectors/capital_good_sector.py` (5 energy tops),
+`dsk/nation.py` (pass tops), `planningDocs/NAME_MAP.md`, plus tests +
+deterministic verification vs `out_Bd/A1all_{el,en,ef}_*`.
+
+**Status:** research/design complete; implementation next. Not yet a passing task.

@@ -416,6 +416,7 @@ Goal: electricity producer with green and brown plant vintages, R&D, dispatch, e
 - **Output:** `dsk/agents/electricity_producer.py` — singleton per nation, holds `green_plants` and `brown_plants` as `AgentSet`s. Includes R&D state (separate for green and brown).
 - **Acceptance:** Initial plants seeded so green share matches `K_ge0_perc`.
 
+
 ### Task 3.3 — Plant dispatch (merit order)
 - **Model:** Sonnet
 - **Depends on:** 3.2
@@ -465,64 +466,12 @@ Goal: electricity producer with green and brown plant vintages, R&D, dispatch, e
 - **Output:** `Nation.run_electricity_market(t)` and `Nation.compute_industrial_emissions(t)` are real methods (not stubs); wired into `production_phase()`.
 - **Acceptance:** Full one-nation step including energy completes; no NaNs.
 
-### Task 3.10 — Verification gate: M3 baseline energy  ✅ **DONE (2026-05-26)**
-
-> **Status:** Completed. See `planningDocs/M3_VERIFICATION_RESULT.md` for the
-> full closing record. One bug fixed (initial `Technology` was missing
-> `energy_efficiency`, defaulting to 1.0 instead of `A0_en ≈ 0.133`; the
-> deterministic `D_en_TOT` divergence was 6.5× before the fix and ~1 % after).
-> Stochastic ensemble residuals are the inherited M1 RNG amplification (Py real
-> GDP grows ~37 % faster than C++ at t=60), tracked, not gated.
-
+### Task 3.10 — Verification gate: M3 baseline energy
 - **Model:** Opus
 - **Depends on:** 3.9
-- **Inputs:**
-  - C++ reference: 32-MC stochastic ensemble in
-    `Code/Wieners_2025-main_slim/basecode/output_B/ymc_*.txt` (mc indices
-    101-132, orig_N50 config) and the deterministic `out_Bd/ymc_0_1_100.txt`
-    (N1=100, N2=400). The ymc per-MC table (80 columns) carries the energy /
-    climate / fiscal-monetary series the M3 gate needs, including
-    `Share_energy_green` (col 16), `D_en_TOT` (17), `c_en` (48), emissions
-    cols 18 + 54-56.
-  - Python: 32-MC stochastic from `run_ensemble_M3.py` and a deterministic
-    trajectory from `run_deterministic_M3.py`.
-- **Output:**
-  - `tests/reference/one_nation/M3_baseline.ipynb` — gate notebook
-    (deterministic + stochastic plots, intensity table, explicit PASS verdict).
-  - `tests/reference/one_nation/{run_ensemble,run_deterministic,build_M3_baseline_notebook}_M3.py`
-  - `tests/reference/one_nation/load_cpp_basecode.py` — new
-    `load_cpp_ymc_ensemble()` + `YMC_COLUMNS` for the 80-column ymc frame.
-  - `dsk/nation.py` — M3 energy fields added to `save_outputs` (see build_log).
-- **Refined acceptance criteria (used 2026-05-26):**
-
-  *Primary (deterministic-mode).* Both codebases noise-off, single trajectory
-  each. Steady-state (t≥20) max relative deviation < 15 % for total energy
-  demand and total emissions; sector-1 electrification fixed at `A0_el = 0.3`
-  when active; green plant share = 0 on both sides. → 0.51 % / 14.50 % /
-  0.30 / 0=0. ✓
-
-  *Secondary (stochastic, intensity-based).* Energy / GDP and emissions /
-  GDP intensities partially factor out the inherited M1 RNG residual. The
-  remaining gap (15 % / 61 %) is from sector-1 production compounding faster
-  than GDP. **Tracked, not gated** — same template as M1's nominal-CPI and
-  M2's stochastic policy-rate residuals.
-
-- **Original acceptance (superseded, preserved for the file):** "Ensemble
-  means within 15 % of C++; green share trajectory shape matches."
-
-  *Why superseded.* Raw stochastic mean inherits the M1 RNG real-GDP
-  divergence and compounds it through the energy chain (sector-1 production
-  grows faster than GDP via investment). Like M1/M2, the deterministic-mode
-  test is the structural certificate; the stochastic comparison is best done
-  on intensity ratios, and even those amplify the upstream RNG residual.
-
-- **Tests in suite related to M3 verification:** `tests/integration/
-  test_run_with_energy.py` (9 tests; M3 phase wiring), `tests/integration/
-  test_emiss_ind.py` (20 tests; industrial emissions accounting),
-  `tests/integration/test_en_dem.py` (19 tests; firm-side energy demand),
-  `tests/integration/test_capacity_expansion.py`, `test_dispatch.py`,
-  `test_energy_rd.py`, `test_energy_in_costs.py`. **429 passing, 1
-  documented skip** in the targeted M3 subset as of gate close.
+- **Inputs:** C++ basecode baseline output for green share, energy prices, emissions.
+- **Output:** `tests/reference/one_nation/M3_baseline.ipynb`. Compare: green plant share, electricity price, total emissions, sector electrification.
+- **Acceptance:** Ensemble means within 15% of C++; green share trajectory shape matches.
 
 ---
 
@@ -551,69 +500,12 @@ Goal: global `ClimateSystem` (C-ROADS) integrated; warming responds to emissions
 - **Output:** `ClimateSystem` shifts current state → previous state at step end; nations receive temperature anomaly via `Nation.receive_climate_state(climate)`.
 - **Acceptance:** State updates without losing precision; consecutive temperatures differ by the modeled increment.
 
-### Task 4.4 — Verification gate: M4 baseline warming  ✅ **DONE (2026-05-26)**
-
-> **Status:** Completed.  See `planningDocs/M4_VERIFICATION_RESULT.md` for
-> the full closing record (one bug fixed: `Simulation._emission_buffer` is
-> now a rolling window over the last `freqclim` periods, matching C++
-> `module_climate.cpp:38-42`, instead of the cumulative accumulator that
-> reset on fire).  Climate-box machinery verified to within 0.15 % on Cat
-> and 0.003 K on Tmixed in the stable window t ∈ [81, 120]; full-window
-> tolerance under the M3-precedent 15 % rel / 0.5 K abs.  Stochastic
-> ensemble divergence tracked as the M1-amplified residual (Py real GDP
-> runs above C++ → higher emission flux → higher Cat/Tmixed; per-tonne
-> response is correct).  One tracked finding (t = 122 Py deterministic
-> energy-emissions step) carried over to M5 for re-check under carbon-tax
-> scenarios.
-
+### Task 4.4 — Verification gate: M4 baseline warming
 - **Model:** Opus
 - **Depends on:** 4.3
-- **Inputs:**
-  - C++ reference: 32-MC stochastic ensemble in
-    `Code/Wieners_2025-main_slim/basecode/output_B/ymc_*.txt` (mc indices
-    101-132, orig_N50 config) and the deterministic `out_Bd/ymc_0_1_100.txt`
-    (N1=100, N2=400, t up to 208).  Cat (col 19) and Tmixed (col 20) are
-    already in `YMC_COLUMNS` from M3.
-  - Python: 32-MC stochastic from `run_ensemble_M4.py` and a deterministic
-    trajectory from `run_deterministic_M4.py`, both T=220.
-- **Output:**
-  - `tests/reference/one_nation/M4_baseline.ipynb` — gate notebook
-    (deterministic + stochastic plots, percentile-band check, explicit
-    PASS verdict).
-  - `tests/reference/one_nation/{run_ensemble,run_deterministic,build_M4_baseline_notebook}_M4.py`
-  - `dsk/nation.py` — M4 climate fields added to `save_outputs`.
-  - `dsk/simulation.py` — `_emission_buffer` rewritten as a rolling window;
-    `__init__` now seeds every nation's `_last_climate` reference.
-- **Refined acceptance criteria (used 2026-05-26):**
-
-  *Primary (a) — climate-box-stable window.* Both codebases noise-off,
-  single trajectory each, t ∈ [81, 120] (upstream emissions agree 1–2 %).
-  Cat max rel dev < 1 % → 0.147 % ✓; Tmixed max abs dev < 0.01 K
-  → 0.0034 K ✓.  The strict structural certificate for the C-ROADS box.
-
-  *Primary (b) — full deterministic window.* t ∈ [81, 208].  Cat max rel
-  dev < 15 % (M3 emissions-test precedent) → 12.82 % ✓; Tmixed max abs
-  dev < 0.5 K → 0.367 K ✓.
-
-  *Secondary (stochastic band-membership).* Python ensemble mean inside
-  C++ 10–90 % band: Cat 50.0 %, Tmixed 55.7 %, Emiss_yearly_calib 67.9 %.
-  **Tracked, not gated** — same RNG-amplification pattern as M1/M2/M3.
-
-- **Original acceptance (superseded, preserved for the file):** "Ensemble
-  mean within 10th–90th percentile band shown in Fig 1a."
-
-  *Why superseded.* Raw stochastic-mean threshold is the wrong instrument
-  when the inherited M1 RNG residual drives Python real GDP ~37 % above
-  C++ at t = 60 (and the gap widens through t = 220).  Higher GDP →
-  higher sector-1 production → higher emissions flux → higher Cat/Tmixed.
-  The climate machinery is correct per-tonne of CO₂ emitted, established
-  by the deterministic dual-window check.
-
-- **Tests in suite related to M4 verification:** `tests/integration/
-  test_climate_box.py` (8), `test_climate_aggregation.py` (14; two
-  rewritten this gate to the rolling-window invariant),
-  `test_updateclimate.py` (20).  **655 passed, 1 skipped** in the full
-  unit + non-slow integration suite as of M4 close.
+- **Inputs:** Wieners 2025 Fig 1a Baseline curve; C++ basecode warming output.
+- **Output:** `tests/reference/one_nation/M4_baseline.ipynb`. Compare Python ensemble-mean warming to Fig 1a (Baseline, black line).
+- **Acceptance:** Ensemble mean within 10th–90th percentile band shown in Fig 1a.
 
 ---
 
@@ -663,12 +555,57 @@ Goal: implement all policy instruments and reproduce Wieners 2025 scenario figur
 - **Output:** `configs/nations/{baseline, Tc, T2, T2h, T2i, TD2, TDh, Tsec, BE, CER, BCER, BCERT}.yaml`. Each is a baseline.yaml plus a policy fragment.
 - **Acceptance:** Each loads without error; running 5 steps produces non-NaN output.
 
-### Task 5.7 — Verification gate: M5 vs Wieners Figs 1–5
+### Task 5.7 — Verification gate (PARTIAL): M5 carbon-pricing subset  ✅ **DONE (2026-05-29) — PASS (partial)**
+
+> **Status:** Completed as an approved **partial** gate. Full record in
+> `planningDocs/M5_VERIFICATION_RESULT.md`. Gated {baseline, Tc, T2} on
+> {temperature, emissions, renewable share, bankruptcy, unemployment, GDP};
+> `baseline→T2` policy-direction concordance **12/12 (100%)**. Three features
+> needed for a FULL Figs 1–5 reproduction were found unported/unavailable and
+> are addressed by Tasks 5.7.1–5.7.3 below, with the FULL gate at Task 5.8.
+
 - **Model:** Opus
 - **Depends on:** 5.6
-- **Inputs:** Wieners 2025 paper figures; C++ basecode output for each scenario in `Code/Wieners_2025-main_slim/baseline/` and `files_BCERT/`.
-- **Output:** `tests/reference/one_nation/M5_all_scenarios.ipynb`. Reproduce Figs 1, 2, 3, 4, 5 of the paper.
-- **Acceptance:** Ranking of scenarios on each indicator matches paper. Quantitative ensemble means within 20% across all scenarios. Any scenario that fails is documented and debugged before moving on.
+- **Output:** `tests/reference/one_nation/M5_all_scenarios.ipynb` + `run_ensemble_M5.py`, `run_deterministic_M5.py`, `build_M5_all_scenarios_notebook.py`; `load_cpp_basecode.py` scenario loaders; `dsk/nation.py` `n_s2_bankruptcies` field.
+- **Acceptance (refined, used 2026-05-29):** `baseline→T2` direction concordance on every gateable indicator at 2050 + 2100 (12/12); full 3-way ranking reported as diagnostic; raw stochastic levels tracked, not gated (M1 RNG amplification). The original all-Figs / within-20% acceptance is carried to **Task 5.8**.
+
+---
+
+## Milestone 5 — FULL gate extension (Tasks 5.7.1–5.7.3 → 5.8)
+
+The partial gate (5.7) established that the *ported* channels reproduce the
+paper's direction. A FULL reproduction of Figs 1–5 needs three enabling pieces
+(5.7.1–5.7.3), after which the FULL gate (5.8) re-runs Task 5.7's original
+acceptance. **Per the no-auto-advance rule, M6 does not begin until 5.8 passes
+and the user signs off.**
+
+### Task 5.7.1 — Port firm-side energy-axis innovation (TECHANGEND energy axes)
+- **Model:** **Opus** (algorithmically subtle; ~1000 lines of C++ R&D machinery; the single largest item — reopens the Task 1.14 energy-axis deferral).
+- **Depends on:** 5.7.
+- **Inputs:** `TECHANGEND` in `Code/Wieners_2025-main_slim/basecode/dsk_main.cpp:7132-8297` — the energy-axis branches skipped in Task 1.14: the `RDin1`/`RDin2` energy-vs-labour innovation-budget split (incl. the `xin`/`share_en` allocation and the electrification-mandate emergency split at ~7280), the energy-axis Beta draws for `A1p_en`, `A1p_ef`, `A1p_el` and their machine-sold counterparts `A1_en`, `A1_ef`, `A1_el`, the energy-aware imitation technological-distance (`flag_techdist=1` full form), and the full energy-inclusive lifetime-cost decision (`cost_sect1`/`cost_sect2` with energy + electrification-fine terms). Read `module_energy.h`/`.cpp` for the axis semantics.
+- **Output:** extend `CapitalGoodFirm.advance_technology()` (`dsk/agents/capital_good_firm.py`) so candidates innovate/imitate the three energy axes (currently they inherit the frozen `A0_*` values at lines ~671-673). Update `MachineStock`/`Technology` wiring as needed; update `NAME_MAP.md` for any new symbols.
+- **Acceptance:** deterministic-mode — against the C++ deterministic `out_Bd/` per-firm axis trajectories (`A1all_el_*`, `A1all_en_*`, `A1all_ef_*`), the Python mean `A1p_el/en/ef` track within the M3-precedent tolerance over the spin-up; under an active `ElectrificationMandate` the mean electrification fraction rises above `A0_el=0.3` (currently impossible). Existing labour-only tests still pass; SFC invariants hold.
+
+### Task 5.7.2 — Port carbon-tax revenue routing (`t_CO2_use[]`)
+- **Model:** **Sonnet** (business-logic port; bounded scope).
+- **Depends on:** 5.7.
+- **Inputs:** the `t_CO2_use[]` allocation vector and its use in `CLIMATE_POLICY`/`GOV_BUDGET` (`dsk_main.cpp`; `dsk_constant.h:335` per the readme). Revenue destinations: government budget / households (unemployment benefits) / industrial (sector-1) R&D / energy R&D.
+- **Output:** extend `dsk/policy/carbon_tax.py` + `Government` so collected carbon-tax revenue is routed per a configurable `revenue_use` weight vector; wire the T2h (→households) and T2i (→industrial R&D) fragments in `configs/`. Update the scenario YAMLs so T2h/T2i are no longer degenerate to T2.
+- **Acceptance:** `tests/integration/test_carbon_tax_revenue.py` — revenue split matches the configured weights and the fiscal identity still closes; T2h and T2i ensemble trajectories diverge from T2 in the expected direction.
+
+### Task 5.7.3 — Build the C++ green-industrial-policy references (Figs 3/4/5)
+- **Model:** **Sonnet** (build/run + debugging an unproven toolchain; escalate to Opus only if the build fights back).
+- **Depends on:** 5.7.
+- **Inputs:** `Code/Wieners_2025-main_slim/basecode/{Makefile, run_scenarios.sh, build_linux/}`; `files_BCERT/` (the `0_dsk_main.cpp`, `0_dsk_flag.h`, `0_dsk_constant.h` overlay); `readme.txt` scenario-composition notes.
+- **Output:** compile the C++ on this Linux box and run the green-industrial-policy scenarios — **BE, CER, BCER, BCERT** (+ Tsec, TD2, TDh as available) — producing `ymc_*.txt` ensembles under `run_scenario_<S>/output_<S>/`, mirroring the existing B/Tc/T2/T2h/T2i runs.
+- **Acceptance:** each target scenario produces a 64-MC × 220-step `ymc` ensemble that the `load_cpp_scenario_ymc()` loader reads. **Risk:** if the toolchain will not build here, document the blocker; Figs 3/5 then stay reference-less and 5.8 remains partial on those panels (recorded explicitly).
+
+### Task 5.8 — FULL verification gate: M5 vs Wieners Figs 1–5
+- **Model:** **Opus** (highest-stakes diagnostic; the milestone gate).
+- **Depends on:** 5.7.1, 5.7.2, 5.7.3.
+- **Inputs:** Wieners 2025 paper figures; the full C++ scenario reference set (B/Tc/T2/T2h/T2i from 5.6 + BE/CER/BCER/BCERT from 5.7.3); the executed `M5_all_scenarios.ipynb` from 5.7 (extended).
+- **Output:** extend `tests/reference/one_nation/M5_all_scenarios.ipynb` to all of Figs 1, 2, 3, 4, 5 with the electrification panels (c, e) now live and the green-industrial-policy scenarios included; `planningDocs/M5_VERIFICATION_RESULT.md` updated to the FULL verdict.
+- **Acceptance (original Task 5.7 criteria):** ranking of scenarios on each indicator matches the paper; quantitative ensemble means within 20% across all scenarios (subject to the standing RNG-amplification residual being separated out per the M1–M4 template). Any scenario that fails is documented and debugged before M6.
 
 ---
 

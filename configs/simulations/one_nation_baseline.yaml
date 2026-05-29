@@ -1,0 +1,17 @@
+# One-nation baseline simulation — matches C++ basecode/ configuration.
+# Paths are relative to this file's directory.
+
+master_seed: 42
+
+global: ../global/default.yaml
+
+nations:
+  - id: global
+    config: ../nations/baseline.yaml
+    policy: []
+
+trade:
+  enabled: false
+
+climate:
+  shared: true

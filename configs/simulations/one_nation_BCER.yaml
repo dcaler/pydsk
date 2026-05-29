@@ -1,0 +1,30 @@
+# BCER scenario simulation — Ban + Construction + Electrification + R&D
+# Brown construction ban, green plant subsidy, electrification mandate, and R&D support.
+
+master_seed: 42
+
+global: ../global/default.yaml
+
+nations:
+  - id: global
+    config: ../nations/baseline.yaml
+    policy:
+      - type: BrownConstructionBan
+        invest_ban_offset: 21
+        invest_announce_offset: 1
+        ban_on: true
+      - type: GreenConstructionSubsidy
+        y_subs: 0.333
+        cap_fraction: 0.05
+      - type: ElectrificationMandate
+        mandate_value: 1.0
+        enforcement_offset: 31
+        react_window: 20
+      - type: GreenRDSubsidy
+        rd_topup_fraction: 0.5
+
+trade:
+  enabled: false
+
+climate:
+  shared: true

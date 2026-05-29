@@ -1,0 +1,23 @@
+# Tc scenario — Tax critical (constant carbon tax at critical level)
+# Extends baseline.yaml with a modest constant carbon tax (0.6e-4).
+# Revenue goes to government budget.
+
+# Import all baseline nation parameters
+n_banks: 10
+unemployment_benefit_share: 0.7
+tax_rate_firms_wages: 0.1
+tax_rate_banks: 0.1
+deficit_rule: 0.03
+policy_rate: 0.02
+taylor_rule_inflation_coef: 1.1
+taylor_rule_unemployment_coef: 0.0
+beta_basel: 1.0
+credit_multiplier: 0.16
+bank_reserve_requirement_rate: 0.16
+bank_markup_init_rate: 0.3
+s2_markup_init: 0.15
+s2_markup_step_change: 0.01
+wage_inflation_response: 0.05
+wage_unemployment_response: 0.1
+fossil_fuel_price: 0.02
+entry_size_multiplier: 1.0

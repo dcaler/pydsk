@@ -1,0 +1,26 @@
+# CER scenario simulation — Construction subsidy + Electrification + R&D
+# Green plant construction subsidy, electrification mandate, and government R&D support.
+
+master_seed: 42
+
+global: ../global/default.yaml
+
+nations:
+  - id: global
+    config: ../nations/baseline.yaml
+    policy:
+      - type: GreenConstructionSubsidy
+        y_subs: 0.333
+        cap_fraction: 0.05
+      - type: ElectrificationMandate
+        mandate_value: 1.0
+        enforcement_offset: 31
+        react_window: 20
+      - type: GreenRDSubsidy
+        rd_topup_fraction: 0.5
+
+trade:
+  enabled: false
+
+climate:
+  shared: true

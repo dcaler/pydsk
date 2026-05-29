@@ -1,0 +1,22 @@
+# TD2 scenario simulation — Tax with doubling effect (exponential growth)
+# Carbon tax starts at 3.3e-4 and grows exponentially at ~3.46%/year (Nordhaus-style).
+
+master_seed: 42
+
+global: ../global/default.yaml
+
+nations:
+  - id: global
+    config: ../nations/baseline.yaml
+    policy:
+      - type: CarbonTax
+        schedule: exponential
+        base_rate: 3.3e-4
+        growth_rate: 0.0346
+        tax_on: true
+
+trade:
+  enabled: false
+
+climate:
+  shared: true

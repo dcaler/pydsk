@@ -1,0 +1,35 @@
+# BCERT scenario simulation — Full policy mix
+# Brown ban + Green construction subsidy + Electrification mandate + R&D support + Carbon tax.
+# This is the most comprehensive climate policy scenario in the Wieners 2025 paper.
+
+master_seed: 42
+
+global: ../global/default.yaml
+
+nations:
+  - id: global
+    config: ../nations/baseline.yaml
+    policy:
+      - type: BrownConstructionBan
+        invest_ban_offset: 21
+        invest_announce_offset: 1
+        ban_on: true
+      - type: GreenConstructionSubsidy
+        y_subs: 0.333
+        cap_fraction: 0.05
+      - type: ElectrificationMandate
+        mandate_value: 1.0
+        enforcement_offset: 31
+        react_window: 20
+      - type: GreenRDSubsidy
+        rd_topup_fraction: 0.5
+      - type: CarbonTax
+        schedule: constant
+        base_rate: 3.3e-4
+        tax_on: true
+
+trade:
+  enabled: false
+
+climate:
+  shared: true

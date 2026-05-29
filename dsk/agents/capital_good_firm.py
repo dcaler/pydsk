@@ -442,32 +442,46 @@ class CapitalGoodFirm(Agent):
         A1ptop: float,
         all_firms: list,
         gparams: "GlobalParameters",
+        A1_en_top: float = 0.0,
+        A1p_en_top: float = 0.0,
+        A1_ef_top: float = 0.0,
+        A1p_ef_top: float = 0.0,
+        A1p_el_top: float = 0.0,
         elec_price: float = 0.0,
+        current_t: int = 1,
     ) -> None:
-        """Run TECHANGEND for this firm (labour-only, M1 path).
+        """Run TECHANGEND for this firm (FULL path — labour + energy axes).
 
-        Ports the labour-productivity portion of C++ dsk_main.cpp TECHANGEND()
-        lines 7132-7858 (the flag_clim_tech==1 endogenous-frontier path).
-        Energy axes (A1_en, A1p_en, A1_ef, A1p_ef, A1p_el) are deferred to M3.
+        Ports C++ dsk_main.cpp TECHANGEND() lines 7155-7823 (the
+        flag_clim_tech==1 endogenous-frontier path), Task 5.7.1: in addition to
+        the labour-productivity axes (A1, A1p) this now advances the five energy
+        axes — machine energy efficiency A1_en, process energy need A1p_en,
+        machine env filthiness A1_ef, process env filthiness A1p_ef, and
+        electrification fraction A1p_el.
+
+        Axis → Python state map:
+          A1     = self.machine_labour_prod                 A1p   = self.process_labour_prod
+          A1_en  = current_technology.energy_efficiency      A1p_en = self.process_energy_need
+          A1_ef  = current_technology.env_cleanliness        A1p_ef = self.process_env_filthiness
+          A1p_el = current_technology.electrification_fraction
 
         Sequence:
-          1. Update RD budget: RD(1,i) = nu * S1(1,i); fall back to previous RD
-             when sales are zero (C++ lines 7220-7228).
-          2. Labour units of R&D: Ld1rd = RD / w.
-          3. Split into innovation pool (× xi) and imitation pool (× 1-xi);
-             real-vs-nominal R&D mode (flagRD=1 baseline) splits the LABOUR units.
-          4. Innovation Bernoulli: p = (1 - exp(-o12 * RDin)) * probinim.
-          5. Imitation Bernoulli:  p = (1 - exp(-o2  * RDim)) * probinim.
-          6. On Inn success: A1pinn = A1p * (1 + Beta(b_a1,b_b1) rescaled to
-             (uu1_ap,uu2_ap)); A1inn analogous on (uu1_a, uu2_a).
-          7. On Imm success: pick a target with probability ∝ 1/Td where
-             Td is the norm-based labour-only technological distance
-             (flag_techdist=1, energy terms dropped for M1).
-          8. Lifetime-cost decision: candidate with min (1+mi1)*c1 + b*c2
-             replaces current technology (imitation evaluated first, then
-             innovation may override).
+          1-2. RD budget + labour units (unchanged).
+          3.   Split innovation pool by xin: RDin1 (energy) = RDin*xin,
+               RDin2 (labour) = RDin*(1-xin); emergency split (0.2/0.8) when the
+               firm lags the EXPECTED electrification mandate; spin-up override
+               sends all innovation R&D to labour (RDin1=0).
+          4.   Two innovation Bernoullis — Inn1 (energy, rate o11·RDin1) and
+               Inn2 (labour, rate o12·RDin2) — plus imitation (o2·RDim).
+          5.   Energy candidates (Inn1): Beta draws for EE/EEp/EF/EFp (improve
+               downward toward floors) and additive draw for EL (toward [0,1]);
+               labour candidates (Inn2): A1inn/A1pinn (unchanged form).
+          6.   Imitation: energy-aware Td norm; copy ALL axes from the victim.
+          7.   Lifetime-cost decision over the FULL bundle (labour + energy):
+               (1+mi1)·cost_sect1 + b·cost_sect2; imitation first, then innovation.
 
-        elec_price : c_en(1) — current-period electricity price; 0 → labour only.
+        elec_price : c_en(1) — current-period electricity price.
+        current_t  : current period (for the spin-up innovation override).
         """
         from dsk.agents.electricity_producer import _electdemand, _ffueldemand
         from dsk.agents.firm_costs import cost_sect1, cost_sect2
@@ -488,6 +502,45 @@ class CapitalGoodFirm(Agent):
         b_a1      = gparams.beta_innov_alpha                # C++ b_a1    (3.0)
         b_b1      = gparams.beta_innov_beta                 # C++ b_b1    (3.0)
         sentinel  = self._TECH_SENTINEL
+        # Energy-axis innovation parameters (Task 5.7.1).
+        o11       = gparams.rd_productivity_energy          # C++ o11     (0.6)
+        xin       = gparams.innovation_sector1_share_initial  # C++ xin0  (0.07, constant: xin1=0)
+        flag_spinup_innov = gparams.allow_energy_innovation_in_spinup  # flag_spinup_innov (0)
+        t_spinup  = gparams.spin_up_steps                   # C++ t_spinup (60)
+        # rescale ranges
+        uu1_eep   = gparams.s1_energy_eff_innov_lower       # uu1_eep (-0.15)
+        uu2_eep   = gparams.s1_energy_eff_innov_upper       # uu2_eep ( 0.15)
+        uu1_ee    = gparams.s2_energy_eff_innov_lower       # uu1_ee  (-0.15)
+        uu2_ee    = gparams.s2_energy_eff_innov_upper       # uu2_ee  ( 0.15)
+        uu1_efp   = gparams.s1_proc_emission_innov_lower    # uu1_efp (-0.05)
+        uu2_efp   = gparams.s1_proc_emission_innov_upper    # uu2_efp ( 0.05)
+        uu1_ef    = gparams.s2_proc_emission_innov_lower    # uu1_ef  (-0.05)
+        uu2_ef    = gparams.s2_proc_emission_innov_upper    # uu2_ef  ( 0.05)
+        uu1_elp   = gparams.s1_elfrac_innov_lower           # uu1_elp (-0.15)
+        uu2_elp   = gparams.s1_elfrac_innov_upper           # uu2_elp ( 0.15)
+        # limits (EN/EF: lower is better, with floors; EL: clamp to [low, upp])
+        A1p_en_limlow = gparams.s1_energy_need_floor
+        A1_en_limlow  = gparams.s2_energy_need_floor
+        A1p_ef_limlow = gparams.s1_proc_emission_floor
+        A1_ef_limlow  = gparams.s2_proc_emission_floor
+        A1p_el_limlow = gparams.elfrac_floor
+        A1p_el_limupp = gparams.elfrac_ceil
+        flag_el_inn   = gparams.fuel_to_elec_innovation_rule  # flag_fuel_to_elec_inn (0)
+        A0_ef         = gparams.env_filthiness_init           # for Td denominators
+        A0_el         = gparams.electrification_fraction_init_s1
+        elconv        = gparams.fuel_to_electricity_equivalence
+        rule          = gparams.fuel_to_elec_rule
+        pf            = self.nation.params.fossil_fuel_price
+        ff2em         = gparams.fuel_to_emissions_factor
+        t_co2_I1      = self.nation.government.carbon_tax_rate_industry1
+        t_co2_I2      = self.nation.government.carbon_tax_rate_industry2
+
+        # Current energy-axis state (C++ axis names in comments).
+        A1_en_cur  = self.current_technology.energy_efficiency        # A1_en
+        A1p_en_cur = self.process_energy_need                         # A1p_en
+        A1_ef_cur  = self.current_technology.env_cleanliness          # A1_ef
+        A1p_ef_cur = self.process_env_filthiness                      # A1p_ef
+        A1p_el_cur = self.current_technology.electrification_fraction  # A1p_el
 
         # --- Reset transient flags ---
         self.innovated_sector1 = False
@@ -513,11 +566,8 @@ class CapitalGoodFirm(Agent):
         else:
             self.rd_labour_demand = 0.0
 
-        # --- 3. Split into innovation/imitation pools ---
-        # C++ 7242-7255: nominal vs. real-R&D modes. Baseline flagRD=1 (real).
-        # In M1/M3 we skip the energy-axis innovation (xin partition), so the
-        # whole innovation pool goes to labour properties (RDin2 = RDin).
-        # This matches the C++ spinup override at lines 7260-7265.
+        # --- 3. Split innovation pool by xin (energy vs labour) ---
+        # C++ 7265-7288. Real-R&D baseline splits the LABOUR units (Ld1rd).
         if flag_realrd == 0:
             rd_inn_total = self.rd_budget * xi
             rd_imm       = self.rd_budget * (1.0 - xi)
@@ -525,74 +575,107 @@ class CapitalGoodFirm(Agent):
             rd_inn_total = self.rd_labour_demand * xi
             rd_imm       = self.rd_labour_demand * (1.0 - xi)
 
-        # Emergency R&D split (C++ 7280-7282): when a firm is below the EXPECTED
-        # electrification mandate, shift a fraction from labour to energy innovation.
-        # RDin1 (energy) = 0.2 * RDin; RDin2 (labour) = 0.8 * RDin.
-        # Energy-axis innovation is not yet ported (M3), so the energy portion is
-        # unused — but the labour portion is correctly reduced, which lowers the
-        # innovation Bernoulli probability when the firm lags on electrification.
         elfrac_reg_exp  = self.nation.elfrac_reg_exp
         elfrac_reg_fine = self.nation.elfrac_reg_fine
-        elf_current     = self.current_technology.electrification_fraction
-        if elfrac_reg_exp > elf_current:
-            rd_inn_labour = rd_inn_total * 0.8  # C++ RDin2 = RDin * 0.8
-        else:
-            rd_inn_labour = rd_inn_total  # Normal: all goes to labour (no energy axis yet)
+
+        # RDin1 = energy properties; RDin2 = labour properties.
+        rd_in1 = rd_inn_total * xin
+        rd_in2 = rd_inn_total * (1.0 - xin)
+        # Emergency split when lagging the EXPECTED electrification mandate (7280).
+        if elfrac_reg_exp > A1p_el_cur:
+            rd_in1 = rd_inn_total * 0.2
+            rd_in2 = rd_inn_total * 0.8
+        # Spin-up override (7283-7288): no energy innovation during spin-up.
+        if flag_spinup_innov == 0 and current_t < t_spinup:
+            rd_in2 = rd_inn_total
+            rd_in1 = 0.0
 
         self.rd_innovation_budget = rd_inn_total
         self.rd_imitation_budget  = rd_imm
 
-        # --- 4. Innovation Bernoulli (labour properties only) ---
-        # C++ 7276: parber = (1 - exp(-o12 * RDin2(i))) * probinim
-        parber_inn = (1.0 - math.exp(-o12 * rd_inn_labour)) * probinim
-        parber_inn = max(0.0, min(1.0, parber_inn))
-        inn2 = bool(self.rng.binomial(1, parber_inn)) if parber_inn > 0.0 else False
+        # --- 4. Bernoulli trials: Inn1 (energy), Inn2 (labour), Imm ---
+        parber_in1 = max(0.0, min(1.0, (1.0 - math.exp(-o11 * rd_in1)) * probinim))
+        inn1 = bool(self.rng.binomial(1, parber_in1)) if parber_in1 > 0.0 else False
+        parber_in2 = max(0.0, min(1.0, (1.0 - math.exp(-o12 * rd_in2)) * probinim))
+        inn2 = bool(self.rng.binomial(1, parber_in2)) if parber_in2 > 0.0 else False
+        self.innovated_sector1 = inn1
         self.innovated_sector2 = inn2
 
-        # --- 5. Imitation Bernoulli ---
-        # C++ 7289: parber = (1 - exp(-o2 * RDim(i))) * probinim
-        parber_imm = (1.0 - math.exp(-o2 * rd_imm)) * probinim
-        parber_imm = max(0.0, min(1.0, parber_imm))
+        parber_imm = max(0.0, min(1.0, (1.0 - math.exp(-o2 * rd_imm)) * probinim))
         imm = bool(self.rng.binomial(1, parber_imm)) if parber_imm > 0.0 else False
         self.imitated = imm
 
-        # --- 6. Innovation candidate (labour productivity only) ---
-        # C++ 7418-7425: A1pinn(i) = A1p(1,i) * (1 + rnd) where rnd is Beta(b_a1,b_b1)
-        # rescaled onto (uu1_ap, uu2_ap); A1inn(i) analogous on (uu1_a, uu2_a).
-        if inn2:
-            rnd_ap = float(self.rng.beta(b_a1, b_b1))
-            rnd_ap = uu1_ap + rnd_ap * (uu2_ap - uu1_ap)
-            a1p_inn = self.process_labour_prod * (1.0 + rnd_ap)
-
-            rnd_a = float(self.rng.beta(b_a1, b_b1))
-            rnd_a = uu1_a + rnd_a * (uu2_a - uu1_a)
-            a1_inn = self.machine_labour_prod * (1.0 + rnd_a)
+        # --- 5. Innovation candidates (full bundle) ---
+        # Energy axes (C++ 7330-7435): only drawn if Inn1; else inherit current.
+        if inn1:
+            # EEp_inn (A1p_en): improves downward toward floor.
+            rnd = uu1_eep + float(self.rng.beta(b_a1, b_b1)) * (uu2_eep - uu1_eep)
+            eep_inn = max(A1p_en_limlow, A1p_en_limlow + (A1p_en_cur - A1p_en_limlow) * (1.0 - rnd))
+            # EFp_inn (A1p_ef): improves downward toward floor (0 in baseline → stays 0).
+            rnd = uu1_efp + float(self.rng.beta(b_a1, b_b1)) * (uu2_efp - uu1_efp)
+            efp_inn = max(A1p_ef_limlow, A1p_ef_limlow + (A1p_ef_cur - A1p_ef_limlow) * (1.0 - rnd))
+            # ELp_inn (A1p_el): ADDITIVE draw, clamp to [low, upp]; pinned if
+            # already 1. C++ (7360-7400) always draws the Beta then pins, so we
+            # draw unconditionally to keep the RNG sequence faithful.
+            rnd = uu1_elp + float(self.rng.beta(b_a1, b_b1)) * (uu2_elp - uu1_elp)
+            if A1p_el_cur == 1.0:
+                elp_inn = A1p_el_cur
+            else:
+                elp_inn = min(A1p_el_limupp, max(A1p_el_limlow, A1p_el_cur + rnd))
+            # EE_inn (A1_en): sector-2 energy need, improves downward toward floor.
+            rnd = uu1_ee + float(self.rng.beta(b_a1, b_b1)) * (uu2_ee - uu1_ee)
+            ee_inn = max(A1_en_limlow, A1_en_limlow + (A1_en_cur - A1_en_limlow) * (1.0 - rnd))
+            # EF_inn (A1_ef): improves downward toward floor.
+            rnd = uu1_ef + float(self.rng.beta(b_a1, b_b1)) * (uu2_ef - uu1_ef)
+            ef_inn = max(A1_ef_limlow, A1_ef_limlow + (A1_ef_cur - A1_ef_limlow) * (1.0 - rnd))
         else:
-            a1p_inn = sentinel
-            a1_inn = sentinel
+            eep_inn, efp_inn, elp_inn = A1p_en_cur, A1p_ef_cur, A1p_el_cur
+            ee_inn, ef_inn = A1_en_cur, A1_ef_cur
+        # Labour axes (C++ 7438-7457): drawn if Inn2; else inherit current.
+        if inn2:
+            rnd = uu1_ap + float(self.rng.beta(b_a1, b_b1)) * (uu2_ap - uu1_ap)
+            a1p_inn = self.process_labour_prod * (1.0 + rnd)
+            rnd = uu1_a + float(self.rng.beta(b_a1, b_b1)) * (uu2_a - uu1_a)
+            a1_inn = self.machine_labour_prod * (1.0 + rnd)
+        else:
+            a1p_inn = self.process_labour_prod
+            a1_inn = self.machine_labour_prod
+        has_inn = inn1 or inn2
 
-        # --- 7. Imitation target selection (Td norm-based, labour-only) ---
-        # C++ 7510-7546 (flag_techdist=1 branch with energy terms dropped):
-        # Td[ii]^2 = (A1(ii)-A1(i))^2 / A1top^2 + (A1p(1,ii)-A1p(1,i))^2 / A1ptop^2
-        # Probability of selection ∝ 1/Td. Patented firms (Pat(ii)>0) are skipped.
-        a1_imm = sentinel
-        a1p_imm = sentinel
+        # --- 6. Imitation target (energy-aware Td norm) ---
+        # C++ 7510-7567: Td^2 sums squared per-axis gaps normalised by frontier tops.
+        a1_imm = a1p_imm = ee_imm = eep_imm = ef_imm = efp_imm = elp_imm = sentinel
         if imm and len(all_firms) > 0:
-            A1top_eps  = max(A1top, 1e-6)
-            A1ptop_eps = max(A1ptop, 1e-6)
+            A1top_e  = max(A1top, 1e-6)
+            A1ptop_e = max(A1ptop, 1e-6)
+            # Energy Td terms are included only when real frontier tops were
+            # supplied (production path); direct labour-only callers omit them.
+            use_energy_td = A1p_en_top > 0.0
+            en_t  = max(abs(A1_en_top), 1e-12)
+            enp_t = max(abs(A1p_en_top), 1e-12)
+            ef_t  = abs(A1_ef_top) + 0.1 * A0_ef
+            efp_t = abs(A1p_ef_top) + 0.1 * A0_ef
+            # C++ 7541 uses A0_el then A0_ef in the two electrification factors (sic).
+            elp_d = (A1p_el_top + 0.1 * A0_el) * (A1p_el_top + 0.1 * A0_ef)
             inv_td = np.zeros(len(all_firms))
             for ii, other in enumerate(all_firms):
-                dA1 = other.machine_labour_prod - self.machine_labour_prod
-                dA1p = other.process_labour_prod - self.process_labour_prod
-                td_sq = (dA1 * dA1) / (A1top_eps * A1top_eps) \
-                      + (dA1p * dA1p) / (A1ptop_eps * A1ptop_eps)
+                td_sq = (
+                    (other.machine_labour_prod - self.machine_labour_prod) ** 2 / (A1top_e * A1top_e)
+                    + (other.process_labour_prod - self.process_labour_prod) ** 2 / (A1ptop_e * A1ptop_e)
+                )
+                if use_energy_td:
+                    td_sq += (
+                        (other.current_technology.energy_efficiency - A1_en_cur) ** 2 / (en_t * en_t)
+                        + (other.process_energy_need - A1p_en_cur) ** 2 / (enp_t * enp_t)
+                        + (other.current_technology.env_cleanliness - A1_ef_cur) ** 2 / (ef_t * ef_t)
+                        + (other.process_env_filthiness - A1p_ef_cur) ** 2 / (efp_t * efp_t)
+                        + (other.current_technology.electrification_fraction - A1p_el_cur) ** 2 / elp_d
+                    )
                 td = math.sqrt(td_sq)
                 inv_td[ii] = 1.0 / td if td > 0.0 else 0.0
 
             Tdtot = float(inv_td.sum())
             if Tdtot > 0.0:
-                # Cumulative distribution over firms; draw uniform; pick the
-                # bucket containing the draw. Skip firms with an active patent.
                 cumprob = np.cumsum(inv_td) / Tdtot
                 rnd = float(self.rng.uniform(0.0, 1.0))
                 prev = 0.0
@@ -600,79 +683,69 @@ class CapitalGoodFirm(Agent):
                     c = float(cumprob[ii])
                     if rnd > prev and rnd <= c:
                         if other.patent_timer == 0:
-                            a1_imm = other.machine_labour_prod
+                            a1_imm  = other.machine_labour_prod
                             a1p_imm = other.process_labour_prod
+                            ee_imm  = other.current_technology.energy_efficiency
+                            eep_imm = other.process_energy_need
+                            ef_imm  = other.current_technology.env_cleanliness
+                            efp_imm = other.process_env_filthiness
+                            elp_imm = other.current_technology.electrification_fraction
                         break
                     prev = c
 
-        # --- 8. Lifetime-cost decision ---
-        # C++ 7613-7702: cost = (1+mi1)*c1 + b*c2
-        # DSK17 (elec_price > 0): c1 = cost_sect1(w, a1p*a, eld, c_en, ...)
-        #                          c2 = cost_sect2(w, a1, A1_en, c_en, ...)
-        # KS15 (elec_price == 0): c1 = w/(a1p*a), c2 = w/a1
-        # Energy R&D not yet ported → candidates inherit current energy axes.
-        # Electrification mandate: use elfrac_reg_exp (expected, not current) so
-        # firms plan ahead. elfrac_diff = elfrac_reg_exp - candidate_el_frac.
-        _elf    = self.current_technology.electrification_fraction
-        _en     = self.process_energy_need
-        _rule   = gparams.fuel_to_elec_rule
-        _elconv = gparams.fuel_to_electricity_equivalence
-        _pf     = self.nation.params.fossil_fuel_price
-        _ff2em  = gparams.fuel_to_emissions_factor
-        _eld    = _electdemand(_elf, _en, _elconv, _rule)
-        _ffd    = _ffueldemand(_elf, _en, _elconv, _rule)
-        _a1_en  = self.current_technology.energy_efficiency
-        _a1_ef  = self.current_technology.env_cleanliness
-        _t_co2  = self.nation.government.carbon_tax_rate_industry1
-
-        def _lifetime(a1p_val: float, a1_val: float, el_frac: float = _elf) -> float:
-            if a1p_val <= 0.0 or a1_val <= 0.0:
+        # --- 7. Lifetime-cost decision over the FULL bundle ---
+        # C++ 7624-7725: (1+mi1)*cost_sect1 + b*cost_sect2 over labour + energy axes.
+        def _lifetime(a1p_v, a1_v, a1p_en_v, a1p_ef_v, a1p_el_v, a1_en_v, a1_ef_v):
+            if a1p_v <= 0.0 or a1_v <= 0.0:
                 return math.inf
-            # elfrac_diff1 = elfrac_reg_exp - el_frac (C++ lines 7523, 7628)
-            elfrac_def = max(0.0, elfrac_reg_exp - el_frac) if elfrac_reg_exp > 0.0 else 0.0
-            if elec_price > 0.0:
-                c1 = cost_sect1(
-                    wage_net=wage,
-                    process_prod=a1p_val * a,
-                    elec_demand_per_unit=_eld,
-                    elec_price=elec_price,
-                    fossil_demand_per_unit=_ffd,
-                    fossil_price=_pf,
-                    ff2em=_ff2em,
-                    env_filthiness=self.process_env_filthiness,
-                    carbon_tax_s1=_t_co2,
-                    elfrac_deficit=elfrac_def,
-                    fine=elfrac_reg_fine,
-                    rule=_rule,
-                )
-                c2 = cost_sect2(wage, a1_val, _a1_en, elec_price, _a1_ef, _t_co2)
-                return (1.0 + mi1) * c1 + b * c2
-            return (1.0 + mi1) * wage / (a1p_val * a) + b * wage / a1_val
+            eld = _electdemand(a1p_el_v, a1p_en_v, elconv, rule)
+            ffd = _ffueldemand(a1p_el_v, a1p_en_v, elconv, rule)
+            elfrac_diff = elfrac_reg_exp - a1p_el_v  # raw; cost_sect1 fines only if > 0
+            c1 = cost_sect1(
+                wage_net=wage, process_prod=a1p_v * a,
+                elec_demand_per_unit=eld, elec_price=elec_price,
+                fossil_demand_per_unit=ffd, fossil_price=pf, ff2em=ff2em,
+                env_filthiness=a1p_ef_v, carbon_tax_s1=t_co2_I1,
+                elfrac_deficit=elfrac_diff, fine=elfrac_reg_fine, rule=rule,
+            )
+            c2 = cost_sect2(wage, a1_v, a1_en_v, elec_price, a1_ef_v, t_co2_I2)
+            return (1.0 + mi1) * c1 + b * c2
 
-        cost_current = _lifetime(self.process_labour_prod, self.machine_labour_prod)
-        cost_imm = _lifetime(a1p_imm, a1_imm) if imm else math.inf
-        cost_inn = _lifetime(a1p_inn, a1_inn) if inn2 else math.inf
+        cost_current = _lifetime(self.process_labour_prod, self.machine_labour_prod,
+                                 A1p_en_cur, A1p_ef_cur, A1p_el_cur, A1_en_cur, A1_ef_cur)
+        # Imitation first (C++ 7636): adopt the whole victim bundle if cheaper.
+        if imm and a1_imm is not sentinel:
+            cost_imm = _lifetime(a1p_imm, a1_imm, eep_imm, efp_imm, elp_imm, ee_imm, ef_imm)
+            if cost_imm < cost_current:
+                self.machine_labour_prod = a1_imm
+                self.process_labour_prod = a1p_imm
+                A1_en_cur, A1p_en_cur = ee_imm, eep_imm
+                A1_ef_cur, A1p_ef_cur = ef_imm, efp_imm
+                A1p_el_cur = elp_imm
 
-        if imm and cost_imm < cost_current:
-            self.machine_labour_prod = a1_imm
-            self.process_labour_prod = a1p_imm
-            # M1 baseline: flagPAT=0; no patent timer to reset.
+        # Innovation next (C++ 7678), evaluated against the post-imitation state.
+        cost_after_imm = _lifetime(self.process_labour_prod, self.machine_labour_prod,
+                                   A1p_en_cur, A1p_ef_cur, A1p_el_cur, A1_en_cur, A1_ef_cur)
+        if has_inn:
+            cost_inn = _lifetime(a1p_inn, a1_inn, eep_inn, efp_inn, elp_inn, ee_inn, ef_inn)
+            if cost_inn < cost_after_imm:
+                self.vintage += 1
+                self.machine_labour_prod = a1_inn
+                self.process_labour_prod = a1p_inn
+                A1_en_cur, A1p_en_cur = ee_inn, eep_inn
+                A1_ef_cur, A1p_ef_cur = ef_inn, efp_inn
+                A1p_el_cur = elp_inn
 
-        cost_after_imm = _lifetime(self.process_labour_prod, self.machine_labour_prod)
-        if inn2 and cost_inn < cost_after_imm:
-            self.vintage += 1
-            self.machine_labour_prod = a1_inn
-            self.process_labour_prod = a1p_inn
-
-        # --- 9. Refresh current technology and diagnostics ---
-        prev_tech = self.current_technology
+        # --- 8. Commit all axes back to firm state ---
+        self.process_energy_need = A1p_en_cur
+        self.process_env_filthiness = A1p_ef_cur
         self.current_technology = Technology(
             labour_productivity=self.machine_labour_prod,
-            energy_efficiency=prev_tech.energy_efficiency,
-            env_cleanliness=prev_tech.env_cleanliness,
-            electrification_fraction=prev_tech.electrification_fraction,
+            energy_efficiency=A1_en_cur,
+            env_cleanliness=A1_ef_cur,
+            electrification_fraction=A1p_el_cur,
         )
-        if inn2:
+        if has_inn:
             self.innovation_candidate = Technology(labour_productivity=a1_inn)
-        if imm:
+        if imm and a1_imm is not sentinel:
             self.imitation_candidate = Technology(labour_productivity=a1_imm)

@@ -3926,3 +3926,58 @@ pass them into `firm.advance_technology()`.
 deterministic verification vs `out_Bd/A1all_{el,en,ef}_*`.
 
 **Status:** research/design complete; implementation next. Not yet a passing task.
+
+## Task 5.7.1 — Port firm-side energy-axis innovation ✅ DONE (2026-05-29)
+
+**Model:** Opus. **What was built:** extended `CapitalGoodFirm.advance_technology()`
+to the FULL TECHANGEND path — labour axes (A1, A1p) *and* the five energy axes
+(A1_en, A1p_en, A1_ef, A1p_ef, A1p_el). Replaces the labour-only M1 port.
+
+- **R&D split:** innovation pool now split by `xin=0.07` into RDin1 (energy) /
+  RDin2 (labour); emergency 0.2/0.8 split when lagging the expected
+  electrification mandate; spin-up override sends all to labour (RDin1=0, t<60).
+- **Two innovation Bernoullis:** Inn1 (energy, rate o11=0.6) and Inn2 (labour,
+  rate o12=0.15), plus imitation.
+- **Energy candidate draws (Inn1):** Beta draws improving EE/EEp/EF/EFp downward
+  toward floors; additive Beta draw for electrification ELp clamped to [0,1]
+  (drawn unconditionally then pinned at 1, matching C++ RNG order).
+- **Imitation:** energy-aware Td norm (5 extra squared-gap terms, normalised by
+  the new frontier tops; replicates the C++ 7541 A0_el/A0_ef factor mix); copies
+  ALL axes from the victim.
+- **Decision:** one full-bundle lifetime-cost compare `(1+mi1)·cost_sect1 +
+  b·cost_sect2` over labour+energy; imitation first, innovation against the
+  post-imitation state; all axes commit together.
+- **Frontier tops:** `CapitalGoodSector.update_frontier()` now also computes
+  A1_en_top/A1p_en_top/A1_ef_top/A1p_ef_top (MIN — lower is better) and
+  A1p_el_top (MAX); seeded at init via a new `update_frontier()` call in
+  `Nation.initialise_from_parameters`. `Nation.advance_technology(t)` passes the
+  tops + current period; `dynamics_phase` threads `t`.
+
+**No new GlobalParameters or NAME_MAP entries needed** — all constants
+(o11, xin0, the uu* ranges, the floors/ceils, fuel_to_elec_innovation_rule) and
+the axis symbols were already present.
+
+**Key finding — deterministic mode freezes ALL innovation.** The noise-off
+DeterministicGenerator returns `binomial(1,p)=0` always, so neither labour nor
+energy innovation ever fires (mean_machine_prod stays at A0=1.0; electrification
+stays at A0_el=0.3) — on BOTH Python and the C++ deterministic `out_Bd`
+(A1all_el flat at 0.3). So the M1-M4 deterministic certificates were unaffected
+(this change is inert deterministically, confirmed: full suite identical), and
+the energy-axis port is validated **stochastically**, not deterministically.
+
+**Validation (stochastic, seed 0, N1=100):**
+- Baseline electrification drifts DOWN (0.30 → 0.096 by t=160): no policy
+  incentive, fossil cheaper → firms de-electrify. Sensible.
+- Under the doubled carbon tax (T2): electrification rises to **0.999** by t=160.
+  This is the paper's Fig 1e mechanism (carbon tax → industrial electrification),
+  which was **structurally absent** in the partial gate and is now live.
+- Energy efficiency (A1p_en) improves slowly (xin=0.07 → little energy R&D in
+  baseline); labour productivity grows strongly as before.
+
+**Tests:** 761 passed, 1 skipped (full unit+integration excl. slow SFC). The 7
+call-site failures from the new signature were fixed by defaulting the energy
+frontier-top kwargs (and gating the energy Td terms on real tops being supplied,
+so direct labour-only callers keep labour-only imitation distance). No model
+regressions — deterministic results bit-identical.
+
+**Next (5.7.2):** carbon-tax revenue routing so T2h/T2i diverge from T2.

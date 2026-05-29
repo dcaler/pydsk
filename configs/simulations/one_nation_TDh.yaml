@@ -1,0 +1,22 @@
+# TDh scenario simulation — Tax exponential growth (households variant)
+# Exponentially-growing carbon tax with revenue to households.
+
+master_seed: 42
+
+global: ../global/default.yaml
+
+nations:
+  - id: global
+    config: ../nations/baseline.yaml
+    policy:
+      - type: CarbonTax
+        schedule: exponential
+        base_rate: 3.3e-4
+        growth_rate: 0.0346
+        tax_on: true
+
+trade:
+  enabled: false
+
+climate:
+  shared: true

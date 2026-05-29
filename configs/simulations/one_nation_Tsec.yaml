@@ -1,0 +1,23 @@
+# Tsec scenario simulation — Tax sector-specific variant
+# Carbon tax at 3.3e-4 with potential sector-specific rates.
+# Note: Sector-specific tax differentiation may be deferred to future implementation.
+
+master_seed: 42
+
+global: ../global/default.yaml
+
+nations:
+  - id: global
+    config: ../nations/baseline.yaml
+    policy:
+      - type: CarbonTax
+        schedule: constant
+        base_rate: 3.3e-4
+        base_rate_s2: 0.0
+        tax_on: true
+
+trade:
+  enabled: false
+
+climate:
+  shared: true

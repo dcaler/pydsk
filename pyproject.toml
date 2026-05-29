@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=62.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dsk"
+version = "0.1.0"
+description = "DSK Python Port - Economic Agent-Based Model"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+    "pyyaml>=6.0",
+    "pyarrow>=12.0.0",
+    "pandas>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[project.scripts]
+dsk = "dsk.cli:main"
+
+[tool.setuptools]
+packages = ["dsk", "dsk.parameters", "dsk.agents", "dsk.sectors", "dsk.markets", "dsk.policy", "dsk.climate", "dsk.trade", "dsk.accounting", "dsk.innovation", "dsk.io"]

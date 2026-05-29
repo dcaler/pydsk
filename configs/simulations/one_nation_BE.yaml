@@ -1,0 +1,25 @@
+# BE scenario simulation — Brown ban + Electrification mandate
+# Bans new brown plant construction and enforces electrification fraction.
+
+master_seed: 42
+
+global: ../global/default.yaml
+
+nations:
+  - id: global
+    config: ../nations/baseline.yaml
+    policy:
+      - type: BrownConstructionBan
+        invest_ban_offset: 21
+        invest_announce_offset: 1
+        ban_on: true
+      - type: ElectrificationMandate
+        mandate_value: 1.0
+        enforcement_offset: 31
+        react_window: 20
+
+trade:
+  enabled: false
+
+climate:
+  shared: true

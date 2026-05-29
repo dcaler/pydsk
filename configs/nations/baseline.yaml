@@ -1,0 +1,39 @@
+# Baseline (experiment=0) nation parameters.
+#
+# Values mirror the C++ baseline that ships with
+# `Code/Wieners_2025-main_slim/basecode/`.  Note that the C++ baseline does
+# NOT use the values declared in `dsk_constant.h`; several are overridden
+# at runtime by `auxiliary/experiment_setting.cpp::EXPERIMENT_INITIALIZE`
+# inside the `if (experiment == 0)` branch (lines 103-129).  The overrides
+# affect: wu, mi2, psi3, credit_multiplier, bankreserve_requirement_rate,
+# r, def_rule, taylor1, taylor2, beta_basel, deltami2, aliq.  Use the
+# *overridden* values here; the `dsk_constant.h` defaults are mostly
+# placeholder noise.
+#
+# Cross-reference cheat-sheet:
+#   wu                      ↔  unemployment_benefit_share        = 0.4 * 7/4 = 0.7
+#   mi2                     ↔  s2_markup_init                    = 0.15
+#   psi3                    ↔  wage_unemployment_response        = 0.05 * 2 = 0.1
+#   credit_multiplier       ↔  credit_multiplier                 = 0.08 * 2 = 0.16
+#   bankreserve_requirement = bankreserve_requirement_rate       = 0.16 (= credit_multiplier)
+#   r                       ↔  policy_rate                       = 0.02
+#   def_rule, taylor1, taylor2, beta_basel, deltami2 — unchanged
+#
+n_banks: 10
+unemployment_benefit_share: 0.7
+tax_rate_firms_wages: 0.1
+tax_rate_banks: 0.1
+deficit_rule: 0.03
+policy_rate: 0.02
+taylor_rule_inflation_coef: 1.1
+taylor_rule_unemployment_coef: 0.0
+beta_basel: 1.0
+credit_multiplier: 0.16
+bank_reserve_requirement_rate: 0.16
+bank_markup_init_rate: 0.3
+s2_markup_init: 0.15
+s2_markup_step_change: 0.01
+wage_inflation_response: 0.05
+wage_unemployment_response: 0.1
+fossil_fuel_price: 0.02
+entry_size_multiplier: 1.0

@@ -1,0 +1,21 @@
+# T2i scenario simulation — Tax2d industry (constant carbon tax at 3.3e-4)
+# Carbon tax revenue goes to industrial R&D (sector 1 R&D funding).
+
+master_seed: 42
+
+global: ../global/default.yaml
+
+nations:
+  - id: global
+    config: ../nations/baseline.yaml
+    policy:
+      - type: CarbonTax
+        schedule: constant
+        base_rate: 3.3e-4
+        tax_on: true
+
+trade:
+  enabled: false
+
+climate:
+  shared: true

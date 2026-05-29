@@ -1,0 +1,21 @@
+# T2 scenario simulation — Tax doubled (constant carbon tax at 3.3e-4)
+# Carbon tax revenue goes to government budget.
+
+master_seed: 42
+
+global: ../global/default.yaml
+
+nations:
+  - id: global
+    config: ../nations/baseline.yaml
+    policy:
+      - type: CarbonTax
+        schedule: constant
+        base_rate: 3.3e-4
+        tax_on: true
+
+trade:
+  enabled: false
+
+climate:
+  shared: true

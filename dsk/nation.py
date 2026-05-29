@@ -221,6 +221,10 @@ class Nation:
             cf = CapitalGoodFirm(self, self.rng)
             cf.initialise_from_parameters(gparams)
             self.capital_good_sector.add(cf)
+        # Seed the sector frontier (incl. the energy-axis tops) from the initial
+        # firm state so the first TECHANGEND's imitation Td norm has valid
+        # denominators (C++ relies on INITIALIZE-time tops at t=1).
+        self.capital_good_sector.update_frontier()
 
         # --- Consumption-good firms (C++ INITIALIZE lines 1460–1702) ---
         # Preferred supplier rotates round-robin (j % N1); all assigned to bank 0.
@@ -1860,14 +1864,15 @@ class Nation:
                 capital_firms[new_sidx].clients.append(dead_s2)
                 capital_firms[new_sidx].num_clients += 1
 
-    def advance_technology(self) -> None:
+    def advance_technology(self, t: int = 1) -> None:
         """Capital-good firms do R&D: Bernoulli trials, beta draws, imitation (TECHANGEND).
 
-        M1 path: only labour-productivity is advanced (energy axes deferred to M3).
-        Each firm runs the per-firm port of C++ TECHANGEND; afterwards the sector's
-        A1top/A1ptop frontier is recomputed for use by next period's Td-norm
-        imitation, and total R&D labour demand is published to the LabourMarket
-        for next period's unemployment / TFP calculations.
+        FULL path (Task 5.7.1): both labour productivity AND the energy axes
+        (energy efficiency A1_en/A1p_en, env filthiness A1_ef/A1p_ef, and
+        electrification fraction A1p_el) are advanced. Each firm runs the per-firm
+        port of C++ TECHANGEND; afterwards the sector frontier (labour + energy
+        tops) is recomputed for next period's Td-norm imitation, and total R&D
+        labour demand is published to the LabourMarket.
         """
         gparams = self.gparams
         sector = self.capital_good_sector
@@ -1878,19 +1883,26 @@ class Nation:
         # TECHANGEND runs after MACRO+WAGE: lm.wage now = C++ w(1) post-update.
         wage = self.labour_market.wage
         elec_price = self.electricity_producer.electricity_price  # c_en(1) for TECHANGEND
-        # A1top/A1ptop were set by the prior period's TECHANGEND (or initialise
-        # via CapitalGoodSector.__init__ for t=1).
-        A1top = sector.A1_top
-        A1ptop = sector.A1p_top
+        # Frontier tops were set by the prior period's TECHANGEND (or by the
+        # initialise-time seeding in initialise_from_parameters for t=1).
+        tops = {
+            "A1top": sector.A1_top,
+            "A1ptop": sector.A1p_top,
+            "A1_en_top": sector.A1_en_top,
+            "A1p_en_top": sector.A1p_en_top,
+            "A1_ef_top": sector.A1_ef_top,
+            "A1p_ef_top": sector.A1p_ef_top,
+            "A1p_el_top": sector.A1p_el_top,
+        }
 
         for firm in all_firms:
             firm.advance_technology(
                 wage=wage,
-                A1top=A1top,
-                A1ptop=A1ptop,
                 all_firms=all_firms,
                 gparams=gparams,
                 elec_price=elec_price,
+                current_t=t,
+                **tops,
             )
 
         # Recompute the sector frontier from updated firm state (C++ 7773-7800).
@@ -2233,7 +2245,7 @@ class Nation:
         self.aggregate_macro_indicators(t)
         self.set_policy_rate()
         self.process_entry_and_exit()
-        self.advance_technology()
+        self.advance_technology(t)
 
     def closeout_phase(self, t: int) -> None:
         """Run all closeout sub-phases in canonical C++ order."""

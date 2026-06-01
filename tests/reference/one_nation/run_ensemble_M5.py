@@ -41,10 +41,21 @@ N1 = 100
 N2 = 400
 LS0 = 500_000.0
 
+# Scenarios with on-disk C++ reference ensembles (Task 5.7.3 built the
+# green-industrial set BE/CER/BCER/BCERT; the carbon-pricing set B/Tc/T2/T2h/T2i
+# pre-dates the partial gate).  TD2/TDh/Tsec/ET2/RT2/BCR have no C++ reference
+# (not built — exponential/sector tax commented out in the current C++ source).
+_SIMDIR = ROOT / "configs" / "simulations"
 SCENARIO_YAML = {
-    "baseline": ROOT / "configs" / "simulations" / "one_nation_baseline.yaml",
-    "Tc": ROOT / "configs" / "simulations" / "one_nation_Tc.yaml",
-    "T2": ROOT / "configs" / "simulations" / "one_nation_T2.yaml",
+    "baseline": _SIMDIR / "one_nation_baseline.yaml",
+    "Tc": _SIMDIR / "one_nation_Tc.yaml",
+    "T2": _SIMDIR / "one_nation_T2.yaml",
+    "T2h": _SIMDIR / "one_nation_T2h.yaml",
+    "T2i": _SIMDIR / "one_nation_T2i.yaml",
+    "BE": _SIMDIR / "one_nation_BE.yaml",
+    "CER": _SIMDIR / "one_nation_CER.yaml",
+    "BCER": _SIMDIR / "one_nation_BCER.yaml",
+    "BCERT": _SIMDIR / "one_nation_BCERT.yaml",
 }
 
 
@@ -80,7 +91,11 @@ def _run_one(args) -> dict:
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--scenarios", nargs="+", default=["baseline", "Tc", "T2"])
+    p.add_argument(
+        "--scenarios",
+        nargs="+",
+        default=["baseline", "Tc", "T2", "T2h", "T2i", "BE", "CER", "BCER", "BCERT"],
+    )
     p.add_argument("--n-runs", type=int, default=32)
     p.add_argument("--t-max", type=int, default=220)
     p.add_argument("--workers", type=int, default=min(24, mp.cpu_count()))

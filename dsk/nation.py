@@ -154,6 +154,13 @@ class Nation:
         self.elfrac_reg_fine: float = 0.0  # fine multiplier per unit of deficit
         # tp_elfrac — total fine collected from sector-1 firms this period
         self.elfrac_revenue: float = 0.0
+        # tp_elfrac(2) — previous period's electrification fine (C++ UPDATE shift)
+        self.elfrac_revenue_prev: float = 0.0
+        # tp_CO2_TOT(1)/(2) — current and previous period total CO2 tax revenue.
+        # C++ module_energy.cpp lines 1289-1294: shift happens inside ENERGY().
+        # In Python the shift is done at the start of run_electricity_market().
+        self._co2_revenue_current: float = 0.0   # tp_CO2_TOT(1)
+        self.co2_revenue_prev: float = 0.0        # tp_CO2_TOT(2)
 
     # ------------------------------------------------------------------
     # Full-nation initialisation (C++ INITIALIZE block)
@@ -276,6 +283,14 @@ class Nation:
     def set_climate_policy(self, t: int) -> None:
         """Activate policy instruments for period t; propagate rates into cost functions."""
         self.climate_policy.apply(t)
+
+        # After CarbonTax.apply() has set government.revenue_use, compute the energy
+        # R&D fund for the CURRENT period using the pre-shift CO2 revenue.
+        # C++ CLIMATE_POLICY line 884: RnD_funds_En = RnD_gov_grant_En + tp_CO2_TOT(2)*use[3]
+        # At this point, self.co2_revenue_prev = "two periods ago" total (not yet shifted).
+        # This matches C++ timing: CLIMATE_POLICY uses tp_CO2_TOT(2) BEFORE ENERGY shifts it.
+        gov = self.government
+        gov.rd_funds_energy = gov.rd_gov_grant_energy + self.co2_revenue_prev * gov.revenue_use[2]
 
     def compute_bank_client_net_worth(self) -> None:
         """Compute total net worth of each bank's client portfolio (WTOTCLIENT).
@@ -1027,6 +1042,28 @@ class Nation:
         # ── 3. Merit-order dispatch (C++ ELECTRICITY_MARKET) ──────────────────
         ep.dispatch_merit_order(ep.total_energy_demand, pf, carbon_tax_en)
 
+        # ── CO2-revenue shift (C++ module_energy.cpp lines 1289-1294) ──────────
+        # Before computing this period's energy CO2 tax, shift the previous "current"
+        # total into "prev" (mirrors C++: if (t>1) tp_CO2_TOT(2)=tp_CO2_TOT(1)).
+        if t > 1:
+            self.co2_revenue_prev = self._co2_revenue_current
+        else:
+            self.co2_revenue_prev = 0.0
+
+        # Compute this period's energy carbon tax: Emiss_en_eff * t_CO2_en.
+        # ep.emissions is set by dispatch_merit_order (= Emiss_en_eff in C++).
+        tp_co2_en = ep.emissions * carbon_tax_en
+        self.government.total_carbon_tax_energy = tp_co2_en
+
+        # Update current-period total (tp_CO2_TOT(1) = en + I1 + I2).
+        self._co2_revenue_current = (
+            tp_co2_en + self.carbon_tax_revenue_s1 + self.carbon_tax_revenue_s2
+        )
+
+        # Wire government energy R&D fund to the electricity producer for this period's R&D.
+        # C++ CLIMATE_POLICY sets RnD_funds_En; ENERGY (here) reads it.
+        ep.govt_rd_funds_effective = self.government.rd_funds_energy
+
         # ── 4. R&D phase (C++ ENERGY :931-1204) ───────────────────────────────
         ep.do_rd(t, pf, carbon_tax_en, wage, gparams)
 
@@ -1109,6 +1146,9 @@ class Nation:
         # self.total_tax holds the PREVIOUS period's accumulated tax (not yet
         # updated this period — that happens in Phase 9). This matches C++
         # dsk_main.cpp:5093: "Taxes from previous period needed in Gov_budget".
+        # co2_revenue_prev is the post-shift value (1-period lagged total), matching
+        # C++ GOV_BUDGET which sees tp_CO2_TOT(2) AFTER the ENERGY shift.
+        # elfrac_revenue_prev is the prior period's fine (C++ tp_elfrac(2)).
         self.government.compute_budget(
             t=t,
             labour_supply=ls,
@@ -1116,6 +1156,8 @@ class Nation:
             wage=wage,
             tax_previous_period=self.total_tax,
             banks=list(self.banking_sector),
+            co2_revenue_prev=self.co2_revenue_prev,
+            elfrac_prev=self.elfrac_revenue_prev,
         )
         G = self.government.spending
 
@@ -1895,6 +1937,15 @@ class Nation:
             "A1p_el_top": sector.A1p_el_top,
         }
 
+        # Distribute government S1 R&D subsidy equally across all N1 firms.
+        # C++ TECHANGEND line 7257: RD(1,i) += RnD_funds_S1 / N1.
+        # rd_funds_industry1 is computed in GOV_BUDGET (compute_budget) using the
+        # post-ENERGY-shift tp_CO2_TOT(2) and revenue_use[3].
+        n1 = len(all_firms)
+        govt_rd_per_firm = self.government.rd_funds_industry1 / n1 if n1 > 0 else 0.0
+        for firm in all_firms:
+            firm.govt_rd_top_up = govt_rd_per_firm
+
         for firm in all_firms:
             firm.advance_technology(
                 wage=wage,
@@ -2077,6 +2128,32 @@ class Nation:
             s1_elf_den += q
         mean_electrification_s1 = s1_elf_num / s1_elf_den if s1_elf_den > 0.0 else 0.0
 
+        # --- Wieners Fig 1/3 transition panels c/d/e (firm-mean technical coeffs) ---
+        # The paper plots simple means over firms (analysis/plot_figure1_5scenarios.py):
+        #   panel c  A2all_en  = A2_en(j)  cons-good electricity use per unit output
+        #   panel d  A1all_en  = A1p_en(i) cap-good total energy use per unit output
+        #   panel e  A1all_el  = A1p_el(i) cap-good electrification fraction
+        # Recorded as simple means over alive firms to match the paper's `.mean(axis=1)`
+        # (C++ writes NaN for dead sector-2 firms; we just skip them — equivalent to nanmean).
+        s1_en_vals = [
+            float(getattr(f, "process_energy_need", 0.0))
+            for f in self.capital_good_sector
+            if getattr(f, "is_alive", True)
+        ]
+        s1_el_vals = [
+            float(getattr(f.current_technology, "electrification_fraction", 0.0))
+            for f in self.capital_good_sector
+            if getattr(f, "is_alive", True)
+        ]
+        s2_en_vals = [
+            float(getattr(f, "effective_energy_efficiency", 0.0))
+            for f in self.consumption_good_sector
+            if getattr(f, "is_alive", True)
+        ]
+        mean_energy_use_s1 = (sum(s1_en_vals) / len(s1_en_vals)) if s1_en_vals else 0.0
+        mean_elfrac_s1 = (sum(s1_el_vals) / len(s1_el_vals)) if s1_el_vals else 0.0
+        mean_elec_use_s2 = (sum(s2_en_vals) / len(s2_en_vals)) if s2_en_vals else 0.0
+
         # M4 climate state — current period's atmospheric carbon, surface temperature, and
         # the calibrated emissions flux fed to the climate box (C++ ymc cols 19, 20, 18).
         # ``_last_climate`` is seeded at Simulation.__init__ so it is always populated.
@@ -2138,6 +2215,9 @@ class Nation:
             emissions_total=emissions_total,
             d1_fossil_fuel_demand=d1_ff_total,
             mean_electrification_s1=mean_electrification_s1,
+            mean_elec_use_s2=mean_elec_use_s2,
+            mean_energy_use_s1=mean_energy_use_s1,
+            mean_elfrac_s1=mean_elfrac_s1,
             total_green_capacity=float(ep.total_green_capacity),
             total_brown_capacity=float(ep.total_brown_capacity),
             # M4 climate
@@ -2196,6 +2276,9 @@ class Nation:
         # c_en(2) = c_en(1): previous electricity price used in cost functions
         ep = self.electricity_producer
         ep.electricity_price_prev = ep.electricity_price
+
+        # --- Electrification fine shift (C++ UPDATE: tp_elfrac(2) = tp_elfrac(1)) ---
+        self.elfrac_revenue_prev = self.elfrac_revenue
 
         # --- Reset per-step counters (C++ UPDATE lines 9019-9024) ---
         # These are reset to ensure clean accumulation in the next step's production phase.

@@ -586,14 +586,14 @@ and the user signs off.**
 - **Output:** extend `CapitalGoodFirm.advance_technology()` (`dsk/agents/capital_good_firm.py`) so candidates innovate/imitate the three energy axes (currently they inherit the frozen `A0_*` values at lines ~671-673). Update `MachineStock`/`Technology` wiring as needed; update `NAME_MAP.md` for any new symbols.
 - **Acceptance:** deterministic-mode — against the C++ deterministic `out_Bd/` per-firm axis trajectories (`A1all_el_*`, `A1all_en_*`, `A1all_ef_*`), the Python mean `A1p_el/en/ef` track within the M3-precedent tolerance over the spin-up; under an active `ElectrificationMandate` the mean electrification fraction rises above `A0_el=0.3` (currently impossible). Existing labour-only tests still pass; SFC invariants hold.
 
-### Task 5.7.2 — Port carbon-tax revenue routing (`t_CO2_use[]`)
+### Task 5.7.2 — Port carbon-tax revenue routing (`t_CO2_use[]`) ✅ DONE (2026-05-29)
 - **Model:** **Sonnet** (business-logic port; bounded scope).
 - **Depends on:** 5.7.
 - **Inputs:** the `t_CO2_use[]` allocation vector and its use in `CLIMATE_POLICY`/`GOV_BUDGET` (`dsk_main.cpp`; `dsk_constant.h:335` per the readme). Revenue destinations: government budget / households (unemployment benefits) / industrial (sector-1) R&D / energy R&D.
 - **Output:** extend `dsk/policy/carbon_tax.py` + `Government` so collected carbon-tax revenue is routed per a configurable `revenue_use` weight vector; wire the T2h (→households) and T2i (→industrial R&D) fragments in `configs/`. Update the scenario YAMLs so T2h/T2i are no longer degenerate to T2.
-- **Acceptance:** `tests/integration/test_carbon_tax_revenue.py` — revenue split matches the configured weights and the fiscal identity still closes; T2h and T2i ensemble trajectories diverge from T2 in the expected direction.
+- **Acceptance:** `tests/integration/test_carbon_tax_revenue.py` — 15 tests passing; revenue split matches configured weights; T2h and T2i diverge from T2. Full suite 776/776 (1 skip), no regressions.
 
-### Task 5.7.3 — Build the C++ green-industrial-policy references (Figs 3/4/5)
+### Task 5.7.3 — Build the C++ green-industrial-policy references (Figs 3/4/5) ✅ DONE (2026-05-31)
 - **Model:** **Sonnet** (build/run + debugging an unproven toolchain; escalate to Opus only if the build fights back).
 - **Depends on:** 5.7.
 - **Inputs:** `Code/Wieners_2025-main_slim/basecode/{Makefile, run_scenarios.sh, build_linux/}`; `files_BCERT/` (the `0_dsk_main.cpp`, `0_dsk_flag.h`, `0_dsk_constant.h` overlay); `readme.txt` scenario-composition notes.

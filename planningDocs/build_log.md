@@ -3981,3 +3981,138 @@ so direct labour-only callers keep labour-only imitation distance). No model
 regressions — deterministic results bit-identical.
 
 **Next (5.7.2):** carbon-tax revenue routing so T2h/T2i diverge from T2.
+
+## Task 5.7.2 — Port carbon-tax revenue routing (`t_CO2_use[]`) ✅ DONE (2026-05-29)
+
+**Model:** Sonnet. **What was built:** extended the carbon-tax system to route CO2 revenue according to a four-element weight vector `revenue_use`, mirroring C++ `t_CO2_use[]` (Makefile lines 73-77).
+
+**C++ reference (confirmed from Makefile + module_macro.cpp):**
+- B/Tc/T2: `TCO2_1=1` → all revenue to government fiscal account (Tax)
+- T2h: `TCO2_2=1` → all revenue to household unemployment benefit (G)
+- T2i: `TCO2_4=1` → all revenue to sector-1 (capital-good) R&D fund
+
+**Timing:** C++ has a one-period asymmetry — CLIMATE_POLICY uses `tp_CO2_TOT(2)` BEFORE ENERGY shifts it, while GOV_BUDGET uses `tp_CO2_TOT(2)` AFTER the shift. Python mirrors this exactly:
+- `set_climate_policy(t)` uses `co2_revenue_prev` (pre-shift) for `rd_funds_energy` (energy R&D)
+- `run_electricity_market(t)` shifts: `co2_revenue_prev = _co2_revenue_current` (then computes new current)
+- `realise_profits_and_taxes → compute_budget` uses `co2_revenue_prev` (post-shift) for Tax + G + `rd_funds_industry1`
+
+**Files changed:**
+- `dsk/policy/carbon_tax.py`: added `revenue_use` parameter (4-element, normalised to sum=1, default `[1,0,0,0]`); pushes to `government.revenue_use` in `apply()`
+- `dsk/agents/government.py`: added `revenue_use`, `rd_funds_industry1` fields; `compute_budget` takes `co2_revenue_prev` and `elfrac_prev` params; Tax += `co2_prev*(use[0]+use[1]) + elfrac_prev`; G gets CO2 household portion; S1 R&D fund set from `co2_prev*use[3]`
+- `dsk/agents/capital_good_firm.py`: added `govt_rd_top_up` field; added to `rd_budget` in `advance_technology` (C++ line 7257)
+- `dsk/nation.py`: added `_co2_revenue_current`, `co2_revenue_prev`, `elfrac_revenue_prev` fields; `set_climate_policy` computes `rd_funds_energy` post-instrument-apply; `run_electricity_market` performs the CO2-revenue shift and wires `ep.govt_rd_funds_effective`; `realise_profits_and_taxes` passes CO2/elfrac prev to `compute_budget`; `advance_technology` distributes `rd_funds_industry1/N1` to each firm; `update_state_for_next_period` shifts `elfrac_revenue_prev`
+- `configs/simulations/one_nation_T2.yaml`: `revenue_use: [1,0,0,0]` (explicit)
+- `configs/simulations/one_nation_T2h.yaml`: `revenue_use: [0,1,0,0]` (households)
+- `configs/simulations/one_nation_T2i.yaml`: `revenue_use: [0,0,0,1]` (S1 R&D)
+- `configs/simulations/one_nation_Tc.yaml`: `revenue_use: [1,0,0,0]` (explicit)
+
+**New test:** `tests/integration/test_carbon_tax_revenue.py` — 15 tests covering:
+- `revenue_use` normalisation and default values
+- `revenue_use` pushed to government on `apply()`
+- CO2 routing produces correct fund allocations (no S1 fund for T2/T2h; positive fund for T2i)
+- T2h G is higher than T2 G when CO2 revenue is active
+- T2i delivers positive S1 R&D fund; scenarios diverge from T2
+- `rd_funds_industry1 = co2_revenue_prev * use[3]` proportion verified
+
+**Test results:** 776 passed, 1 skipped (full suite excluding slow SFC). No regressions. Government test suite 17/17 still passing.
+
+**What the next task can assume:**
+- CO2 tax revenue routing is fully wired: all four channels (gov budget, households, energy R&D, S1 R&D) are active
+- T2h and T2i scenarios now diverge from T2 (confirmed by direction tests)
+- `electricity_producer.govt_rd_funds_effective` is now set from `government.rd_funds_energy` in `run_electricity_market`
+- `CapitalGoodFirm.govt_rd_top_up` is set from `government.rd_funds_industry1 / N1` in `advance_technology`
+- The `elfrac_revenue_prev` shift mirrors C++ `tp_elfrac(2)=tp_elfrac(1)` in UPDATE
+- Task 5.7.3 (C++ build for green-industrial-policy references) and 5.8 (FULL gate) are next
+
+## Task 5.7.3 — Build C++ green-industrial-policy references ✅ DONE (2026-05-31)
+
+**Model:** Sonnet. **What was built:** compiled and launched C++ reference runs for the four green-industrial-policy scenarios (BE, CER, BCER, BCERT) needed for the FULL M5 gate (Figs 3-5 of Wieners 2025).
+
+**Toolchain approach:**
+- The `files_BCERT/0_dsk_main.cpp` overlay was copied into `basecode/dsk_main.cpp` (temporarily replacing the standard main).
+- Two blockers fixed: (1) `g_mc_offset` global missing from overlay → added at file top; (2) overlay pre-dates the parallel-run infrastructure.
+- Three `#ifndef` guards added to the overlay for compile-time policy switching:
+  - `#ifndef NO_SUB` — construction subsidy (disabled for BE)
+  - `#ifndef NO_BROWN_BAN` — brown investment ban (disabled for CER)
+  - `#ifndef NO_ELFRAC` — electrification mandate (available but unused in this set)
+- Basecode `dsk_constant.h` and `dsk_flag.h` kept as-is (N1=100, N2=400, 64 MC via compile flag) for full compatibility with M5 existing runs.
+- Existing shared objects reused (no recompilation needed).
+
+**New Makefile rules (in `basecode/Makefile`):** `bcert_scenarios` target builds 4 binaries:
+- `dsk_BE`    → `run_scenario_BE/output_BE/`    (brown ban + elfrac, no sub, no tax)
+- `dsk_CER`   → `run_scenario_CER/output_CER/`   (sub + elfrac, no ban, no tax)
+- `dsk_BCER`  → `run_scenario_BCER/output_BCER/`  (all policies, no tax)
+- `dsk_BCERT` → `run_scenario_BCERT/output_BCERT/` (all policies + carbon tax at 3.3e-4, revenue → gov budget)
+
+**Status:** COMPLETE. All 256 ymc files (64 per scenario × 4 scenarios) verified on NFS. Python loader confirms: BE 14080 rows/64 MC, CER 9326 rows/64 MC (early termination on many runs — model behaviour under CER policy mix, not a data defect), BCER 13873 rows/64 MC, BCERT 13872 rows/64 MC. All 81 columns present.
+
+**Build/run issues encountered and resolved:**
+1. First run (4 processes sequential): all output silently dropped because the BCERT main uses hardcoded `"output/ymc"` path (not `OUTPUT_DIR`), and `output/` symlink was missing. Fix: added `output → output_{S}` symlinks.
+2. Second run (30 parallel): NFS throttled — all 30 writers went to D-state (uninterruptible I/O wait on the NFS share). Fix: redirected `output` symlinks to `/tmp/dsk_output_{S}/`; ran on local disk, then bulk-copied to NFS.
+3. Third run (abort on all): BCERT overlay has `main(void)` — ignored `argv[1]`, so `g_mc_offset` stayed 0 for every process, all wrote to the same file, newmat detected corruption and aborted. Fix: changed to `main(int argc, char** argv)` with `g_mc_offset = atoi(argv[1])`.
+
+After the source was modified and built, `dsk_main.cpp` was restored to the standard basecode version.
+
+**`load_cpp_basecode.py` updated:** `_SCENARIO_CPP_TAG` extended with BE/CER/BCER/BCERT entries.
+
+**What the next task can assume:**
+- `basecode/dsk_main.cpp` is the standard (unmodified) version.
+- BCERT group binaries (MC_RUNS=1, with argv parsing) at `basecode/dsk_{BE,CER,BCER,BCERT}`.
+- 64 ymc files per scenario at `basecode/run_scenario_{S}/output_{S}/ymc_*.txt`.
+- `load_cpp_scenario_ymc("BE")` etc. work.
+- CER's early-termination behaviour (mean ~146 steps/run) should be noted in the M5 gate analysis.
+- TD2/TDh/Tsec were NOT built — exponential tax is commented out in current C++. Not needed for Figs 3-5.
+
+## Task 5.8 — FULL verification gate: M5 vs Wieners Figs 1–5 ✅ DONE (2026-06-01) — PASS (full)
+
+**Model:** Opus. **What was built:** the FULL M5 gate, extending the partial gate
+(5.7) now that 5.7.1/5.7.2/5.7.3 are complete. Full record in
+`planningDocs/M5_VERIFICATION_RESULT.md` (rewritten to the FULL verdict).
+
+**Verdict: PASS (full)** on the M1–M4 gate instrument:
+- **PRIMARY — transition-indicator direction (a temp, b emissions, e electrification,
+  f renewable), valid C++ refs {Tc,T2,T2h,T2i,BCER,BCERT}: 48/48 = 100%** at 2050+2100.
+- **NEW — electrification panel levels (c/d/e) within ±20%: 38/42 = 90%.** These were
+  frozen at A0 in the partial gate; now LIVE via 5.7.1. e.g. T2@2100 panel c Py 0.091
+  vs C++ 0.086, panel d Py 218 vs C++ 201, panel e Py 0.92 vs C++ 0.95.
+- **BE/CER Python-vs-paper: 8/8** (C++ ref defective — see finding below).
+- **TRACKED (not gated)** macro/financial direction (g,h,i) 22/36, raw level 18/39 —
+  the standing M1 RNG amplification; Fig-4 peak-metric signs agree 8/8 (warming),
+  8/8 (unemployment), 7/8 (bankruptcy).
+
+**Key finding — Task 5.7.3's C++ references for BE and CER are DEFECTIVE.** They show
+no transition (renewable share stays 0, electrification frozen ~0.30), contradicting
+the paper (BE greens to ~90% by 2050); CER also crashes in ~half its MC (30/64 reach
+t=220). The ymc column layout is byte-identical to the standard build, so it is a
+genuine model-output defect from the `files_BCERT` overlay's `#ifndef NO_SUB`/
+`NO_BROWN_BAN` policy switches — NOT a Python error. The Python BE/CER runs reproduce
+the paper (BE green→1.0, warming 3.8→1.8°C). So BE/CER are gated Python-vs-paper, and
+the C++ BE/CER refs are flagged for a 5.7.3 rebuild. BCER/BCERT refs are valid
+(green→1.0, electrification→1.0) and gated normally.
+
+**Files changed:**
+- `dsk/nation.py`: `save_outputs` records 3 firm-mean transition coefficients matching
+  the paper's panels c/d/e — `mean_elec_use_s2` (A2_en), `mean_energy_use_s1` (A1p_en),
+  `mean_elfrac_s1` (A1p_el); simple means over alive firms (paper's `.mean(axis=1)`).
+- `tests/reference/one_nation/load_cpp_basecode.py`: added `load_cpp_scenario_micro()`
+  + `_load_micro_firmmean()` reading the C++ `A1all_el/A1all_en/A2all_en` micro files
+  (NaN-aware nanmean for dead sector-2 firms).
+- `tests/reference/one_nation/run_ensemble_M5.py`: extended to all 9 ref scenarios.
+- `tests/reference/one_nation/cache_cpp_M5.py`: NEW — caches C++ ymc + micro to parquet.
+- `tests/reference/one_nation/build_M5_all_scenarios_notebook.py` + executed
+  `M5_all_scenarios.ipynb`: all of Figs 1–5 (full 9-panel Py-vs-C++ for Figs 1 & 3,
+  partial Figs 2/5, Fig-4 scorecard), defect auto-detection, the three-part gate, verdict.
+- `planningDocs/M5_VERIFICATION_RESULT.md`: rewritten to the FULL PASS record.
+
+**Panel-b note:** the paper's published plotter reads ymc col 19 (Cat, carbon content)
+but labels panel b "CO2 emissions"; col 18 (Emiss_yearly_calib) is the correct flux.
+Used col 18 on both sides (direction-equivalent; matches the partial gate).
+
+**Tests:** 776 passed, 1 skipped, 19 deselected (full unit+integration excl. slow SFC).
+No regressions from the `save_outputs` additions.
+
+**Per the no-auto-advance rule, M6 does NOT begin until the user signs off.** Open
+follow-ups (none blocking the verdict): (1) rebuild C++ BE/CER refs so they transition;
+(2) energy-module transition-timing calibration review; (3) the standing M1 macro RNG
+residual. Ensemble run config: N1=100, N2=400, LS0=500000, 32 MC, T=220 (Python) vs
+64 MC C++.

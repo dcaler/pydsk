@@ -243,9 +243,10 @@ def load_cpp_ymc_ensemble(out_dir: Path = OUT_B_DIR) -> pd.DataFrame:
 #
 # These are the *paper-level* runs (N1=100, N2=400, LS0=500000, T=220, 64 MC,
 # mc indices 100-163) used to build the paper's Figure 1.  The on-disk set
-# covers the carbon-pricing scenarios only:  B, Tc, T2, T2h, T2i.  The
-# green-industrial-policy scenarios (BE/CER/BCER/BCERT, Figs 3 & 5) are NOT on
-# disk — they require recompiling the C++ with files_BCERT/.
+# covers all scenarios once Task 5.7.3 is complete:
+#   Carbon-pricing: B, Tc, T2, T2h, T2i    (compiled from standard dsk_main.cpp)
+#   Green-industrial-policy: BE, CER, BCER, BCERT   (compiled from BCERT overlay;
+#     see basecode/Makefile BCERT_SCENARIOS; runs launched by Task 5.7.3)
 # --------------------------------------------------------------------------
 
 _BASECODE_DIR = (
@@ -253,6 +254,9 @@ _BASECODE_DIR = (
 )
 
 # Python scenario name -> C++ scenario tag (directory suffix).
+# Carbon-pricing scenarios: compiled from basecode/dsk_main.cpp (standard).
+# Green-industrial-policy scenarios: compiled from files_BCERT/0_dsk_main.cpp
+#   (BCERT overlay) with per-scenario -D flags; see basecode/Makefile BCERT_SCENARIOS.
 _SCENARIO_CPP_TAG = {
     "baseline": "B",
     "B": "B",
@@ -260,6 +264,11 @@ _SCENARIO_CPP_TAG = {
     "T2": "T2",
     "T2h": "T2h",
     "T2i": "T2i",
+    # Green-industrial-policy scenarios (Figs 3-5 of Wieners 2025)
+    "BE": "BE",       # Brown ban + Electrification mandate (no subsidy, no tax)
+    "CER": "CER",     # Construction subsidy + Electrification + R&D (no ban, no tax)
+    "BCER": "BCER",   # Brown ban + CER (no tax)
+    "BCERT": "BCERT", # Brown ban + CER + Carbon tax
 }
 
 
@@ -281,6 +290,64 @@ def load_cpp_scenario_ymc(scenario: str) -> pd.DataFrame:
             f"No C++ output dir for scenario {scenario!r}: {out_dir}"
         )
     return load_cpp_ymc_ensemble(out_dir)
+
+
+# --------------------------------------------------------------------------
+# M5 FULL gate — per-firm micro files for Wieners Fig 1/3 panels c, d, e.
+#
+# The paper plots simple firm-means of three technical coefficients written by
+# the C++ SAVE (dsk_main.cpp:5804-5945, flag_clim_tech==1 branch):
+#   A1all_el_*.txt   A1p_el(i)  N1 cols  cap-good electrification fraction   panel e
+#   A1all_en_*.txt   A1p_en(i)  N1 cols  cap-good energy use / unit output   panel d
+#   A2all_en_*.txt   A2_en(j)   N2 cols  cons-good electricity / unit output panel c
+#     (dead sector-2 firms written as "NaN" -> nanmean)
+# Each file is one row per period; the paper takes ``.mean(axis=1)`` per row.
+# --------------------------------------------------------------------------
+
+# Python macro column  ->  (C++ micro-file prefix, aggregator)
+_MICRO_PANELS = {
+    "mean_elfrac_s1": "A1all_el",     # panel e
+    "mean_energy_use_s1": "A1all_en",  # panel d
+    "mean_elec_use_s2": "A2all_en",    # panel c
+}
+
+
+def _load_micro_firmmean(out_dir: Path, prefix: str) -> pd.DataFrame:
+    """Per-(mc_run, t) firm-mean of one micro file (nanmean over firms)."""
+    paths = _list_mc_files(prefix, out_dir)
+    if not paths:
+        raise FileNotFoundError(f"No {prefix}_*.txt under {out_dir}")
+    rows = []
+    for path in paths:
+        mc = int(path.stem.rsplit("_", 1)[-1])
+        # genfromtxt so the literal "NaN" entries (dead firms) parse to np.nan.
+        arr = np.genfromtxt(path)
+        if arr.ndim == 1:
+            arr = arr.reshape(1, -1)
+        means = np.nanmean(arr, axis=1)
+        for i, m in enumerate(means):
+            rows.append({"mc_run": mc, "t": i + 1, prefix: float(m)})
+    return pd.DataFrame(rows)
+
+
+def load_cpp_scenario_micro(scenario: str) -> pd.DataFrame:
+    """Per-(mc_run, t) firm-means of panels c/d/e for one scenario.
+
+    Returns a long frame with columns
+    ``mc_run, t, mean_elfrac_s1, mean_energy_use_s1, mean_elec_use_s2`` — the
+    same names the Python ``save_outputs`` records, so the notebook can compare
+    them directly.  Raises FileNotFoundError if the scenario has no C++ output.
+    """
+    out_dir = cpp_scenario_ymc_dir(scenario)
+    if not out_dir.is_dir():
+        raise FileNotFoundError(
+            f"No C++ output dir for scenario {scenario!r}: {out_dir}"
+        )
+    merged: pd.DataFrame | None = None
+    for py_col, prefix in _MICRO_PANELS.items():
+        df = _load_micro_firmmean(out_dir, prefix).rename(columns={prefix: py_col})
+        merged = df if merged is None else merged.merge(df, on=["mc_run", "t"])
+    return merged
 
 
 def load_cpp_qcons_snapshot(t_snapshot: int, out_dir: Path = OUT_B_DIR) -> pd.DataFrame:

@@ -1,5 +1,6 @@
-# T2h scenario simulation — Tax2d house (constant carbon tax at 3.3e-4)
-# Carbon tax revenue goes to households (unemployment benefits).
+# T2h scenario simulation — Tax doubled, revenue recycled to households
+# Carbon tax revenue goes to unemployment benefit (household transfers).
+# C++ Makefile: SFLAGS_T2h = -DTAX_RATE=3.3e-4 -DTAX_ON=1 -DTCO2_1=0.0 -DTCO2_2=1.0 -DTCO2_3=0.0 -DTCO2_4=0.0
 
 master_seed: 42
 
@@ -13,6 +14,7 @@ nations:
         schedule: constant
         base_rate: 3.3e-4
         tax_on: true
+        revenue_use: [0.0, 1.0, 0.0, 0.0]
 
 trade:
   enabled: false

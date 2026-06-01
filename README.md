@@ -1,6 +1,6 @@
 # DSK Python Port
 
-An object-oriented Python implementation of the Dosi-Schumpeterian-Keynes (DSK) economic agent-based model, based on the C++ baseline by Wieners (2025).
+An object-oriented Python implementation of the Dystopian Schumpeter meeting Keynes (DSK) economic agent-based model, based on the C++ baseline by Wieners (2025).
 
 ## Installation
 

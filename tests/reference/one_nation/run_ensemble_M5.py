@@ -15,8 +15,8 @@ Writes one parquet per scenario:
     py_macro_M5_<scenario>.parquet     one row per (mc_run, t)
 
 Usage:
-    python3 run_ensemble_M5.py                       # B, Tc, T2 ; 32 MC ; T=220
-    python3 run_ensemble_M5.py --scenarios baseline Tc T2 --n-runs 32
+    python3 run_ensemble_M5.py                       # 9 ref scenarios ; 64 MC ; T=220
+    python3 run_ensemble_M5.py --scenarios baseline Tc T2 --n-runs 64
 """
 from __future__ import annotations
 
@@ -96,7 +96,7 @@ def main() -> None:
         nargs="+",
         default=["baseline", "Tc", "T2", "T2h", "T2i", "BE", "CER", "BCER", "BCERT"],
     )
-    p.add_argument("--n-runs", type=int, default=32)
+    p.add_argument("--n-runs", type=int, default=64)   # match the C++ 64-MC references
     p.add_argument("--t-max", type=int, default=220)
     p.add_argument("--workers", type=int, default=min(24, mp.cpu_count()))
     p.add_argument("--out-dir", type=Path, default=Path(__file__).resolve().parent)

@@ -50,6 +50,18 @@ class CarbonTax:
     t_start : int or None
         Override for t_start_climbox. When None (default) the value is taken
         from nation.gparams.climate_start_step at the first apply() call.
+    revenue_use : list of float, optional
+        Four-element weight vector specifying how CO2 tax revenue is allocated:
+          [0] → government budget (Tax)
+          [1] → household unemployment benefit (G, C++ t_CO2_use(2))
+          [2] → energy-sector R&D fund (C++ t_CO2_use(3), RnD_funds_En)
+          [3] → capital-good-sector R&D fund (C++ t_CO2_use(4), RnD_funds_S1)
+        Weights are normalised to sum to 1 (mirrors C++ normalisation at line 836).
+        Default [1, 0, 0, 0]: all revenue enters the government fiscal account.
+        Makefile scenario definitions:
+          B/Tc/T2  → [1, 0, 0, 0]  (TCO2_1=1, all to gov budget)
+          T2h      → [0, 1, 0, 0]  (TCO2_2=1, all to households)
+          T2i      → [0, 0, 0, 1]  (TCO2_4=1, all to S1 R&D)
     """
 
     def __init__(
@@ -60,6 +72,7 @@ class CarbonTax:
         base_rate_s2: float = 0.0,
         tax_on: bool = True,
         t_start: int | None = None,
+        revenue_use: list | None = None,
     ) -> None:
         self.schedule = schedule
         self.base_rate = base_rate
@@ -67,6 +80,11 @@ class CarbonTax:
         self.base_rate_s2 = base_rate_s2
         self.tax_on = tax_on
         self._t_start = t_start
+
+        # Normalise revenue_use weights to sum to 1 (C++ lines 828-836).
+        raw = list(revenue_use) if revenue_use is not None else [1.0, 0.0, 0.0, 0.0]
+        total = sum(raw) or 1.0
+        self.revenue_use: list[float] = [w / total for w in raw]
 
         # CPI recorded at t=2 — the nominal anchor for the constant schedule.
         # C++ cpi_old(3): set once at t=2 and never updated.
@@ -173,3 +191,7 @@ class CarbonTax:
         gov.carbon_tax_rate_industry1 = rate_s1
         gov.carbon_tax_rate_industry2 = rate_s2
         gov.carbon_tax_rate_energy = rate_en
+
+        # Push revenue-use weights so Government.compute_budget can route CO2 revenue.
+        # C++ CLIMATE_POLICY lines 828-836: t_CO2_use(j) normalised and stored globally.
+        gov.revenue_use = self.revenue_use

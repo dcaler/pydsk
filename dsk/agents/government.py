@@ -83,7 +83,13 @@ class Government:
 
         # --- Government R&D support (energy, Milestone 3+) ---
         self.rd_gov_grant_energy: float = 0.0   # RnD_gov_grant_En
-        self.rd_funds_energy: float = 0.0       # RnD_funds_En
+        self.rd_funds_energy: float = 0.0       # RnD_funds_En (energy sector R&D subsidy)
+        self.rd_funds_industry1: float = 0.0    # RnD_funds_S1 (sector-1 R&D subsidy)
+
+        # --- Carbon-tax revenue allocation (t_CO2_use in C++) ---
+        # Four-element normalised vector: [gov_budget, households, energy_RnD, s1_RnD].
+        # Set by CarbonTax.apply() each period.  Default: all revenue to gov budget.
+        self.revenue_use: list = [1.0, 0.0, 0.0, 0.0]
 
     # ------------------------------------------------------------------
 
@@ -130,6 +136,8 @@ class Government:
         # Energy R&D support
         self.rd_gov_grant_energy = 0.0   # RnD_gov_grant_En = 0
         self.rd_funds_energy = 0.0       # RnD_funds_En = 0
+        self.rd_funds_industry1 = 0.0    # RnD_funds_S1 = 0
+        self.revenue_use = [1.0, 0.0, 0.0, 0.0]  # t_CO2_use: all to gov budget
 
     # ------------------------------------------------------------------
     # GOV_BUDGET — full implementation (Task 2.2)
@@ -143,6 +151,8 @@ class Government:
         wage: float,
         tax_previous_period: float,
         banks: list,
+        co2_revenue_prev: float = 0.0,
+        elfrac_prev: float = 0.0,
     ) -> None:
         """Compute government budget: G, deficit, debt, bond repayment, bond issuance.
 
@@ -169,6 +179,11 @@ class Government:
             period; dsk_main.cpp:5093 comment: "Taxes from previous period needed").
         banks : list[Bank]
             Active bank agents; used for bond operations and bailout sum.
+        co2_revenue_prev : float
+            tp_CO2_TOT(2) — previous period's total carbon tax revenue from all sectors.
+            C++ module_macro.cpp line 601: Tax += tp_CO2_TOT(2)*(1-use3-use4) + elfrac(2).
+        elfrac_prev : float
+            tp_elfrac(2) — previous period's electrification fine revenue.
         """
         gparams = self.nation.gparams
         nparams = self.nation.params
@@ -184,10 +199,38 @@ class Government:
         else:
             Tax = tax_previous_period
 
-        # G(1) — flagC=2: unemployment benefit only (no carbon spending in baseline)
+        # Carbon-tax revenue routing — C++ GOV_BUDGET lines 601-624.
+        # revenue_use[j] is normalised to sum to 1 (set by CarbonTax.apply()).
+        #   use[0] → goes into Tax (reduces deficit)
+        #   use[1] → goes into Tax AND into G (recycled to households via G; net-neutral on deficit)
+        #   use[2] → energy R&D fund (set in set_climate_policy; not a fiscal flow)
+        #   use[3] → sector-1 R&D fund (distributed to capital firms in advance_technology)
+        # Line 601: Tax += tp_CO2_TOT(2)*(1 - use[3] - use[2]) + tp_elfrac(2)
+        #         = tp_CO2_TOT(2)*(use[0] + use[1]) + elfrac_prev
+        use = self.revenue_use
+        co2_to_tax = co2_revenue_prev * (use[0] + use[1])
+        Tax += co2_to_tax + elfrac_prev
+
+        # S1 R&D fund: CO2 revenue fraction destined for capital-good sector R&D.
+        # C++ line 887 comment: "will eventually become … tp_CO2_TOT(2)*t_CO2_use(4)".
+        self.rd_funds_industry1 = co2_revenue_prev * use[3]
+
+        # G(1) — flagC=2: unemployment benefit.
+        # Base benefit = excess_workers * wage * wu.
+        # C++ lines 617-624: if the household CO2 portion is smaller than the
+        # unconstrained benefit shortfall, add it on top; otherwise cap G so that
+        # unemployed workers receive at most 100 % of the employed wage (wu < 1).
+        co2_to_households = co2_revenue_prev * use[1]
         excess_workers = labour_supply - labour_demand
-        self.spending = excess_workers * (wage * wu) if excess_workers > 0.0 else 0.0
-        G = self.spending
+        if excess_workers > 0.0:
+            base_benefit = excess_workers * wage * wu
+            unconstrained_max = excess_workers * wage  # wu=1 cap (line 623)
+            # C++ line 617-619: add CO2 household portion only if it doesn't push
+            # total G beyond the unconstrained maximum.
+            G = min(base_benefit + co2_to_households, unconstrained_max)
+        else:
+            G = 0.0
+        self.spending = G
 
         # Gbailout_all: sum of per-bank government bailout costs this period
         Gbailout_all = sum(b.bailout_cost for b in banks)

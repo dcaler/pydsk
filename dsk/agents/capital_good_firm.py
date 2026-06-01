@@ -48,6 +48,11 @@ class CapitalGoodFirm(Agent):
         # Ld1rd[i]: R&D labour demand
         self.rd_labour_demand: float = 0.0
 
+        # govt_rd_top_up: government R&D subsidy from carbon-tax S1 revenue (RnD_funds_S1/N1).
+        # C++ TECHANGEND line 7257: RD(1,i) += RnD_funds_S1/N1.
+        # Set by nation.advance_technology() before calling this firm's advance_technology().
+        self.govt_rd_top_up: float = 0.0
+
         # Inn1[i], Inn2[i], Imm[i]: binary flags for this period's events
         self.innovated_sector1: bool = False
         self.innovated_sector2: bool = False
@@ -559,6 +564,10 @@ class CapitalGoodFirm(Agent):
             self.rd_budget = nu * self.sales
         else:
             self.rd_budget = self.rd_budget_prev
+
+        # Government R&D top-up from carbon-tax S1 revenue (C++ line 7257).
+        # RD(1,i) += RnD_funds_S1 / N1  (distributed equally across all N1 firms).
+        self.rd_budget += self.govt_rd_top_up
 
         # --- 2. Labour units of R&D ---
         if wage > 0.0:

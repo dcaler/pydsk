@@ -3,7 +3,7 @@
 Source-of-truth lives here; the .ipynb is regenerable.  To rebuild the gate:
 
     python3 tests/reference/one_nation/run_deterministic_M5.py
-    python3 tests/reference/one_nation/run_ensemble_M5.py --workers 32      # 9 scenarios, 32 MC, T=220
+    python3 tests/reference/one_nation/run_ensemble_M5.py --workers 32      # 9 scenarios, 64 MC, T=220
     python3 tests/reference/one_nation/cache_cpp_M5.py                       # cache C++ refs (ymc + micro)
     python3 tests/reference/one_nation/build_M5_all_scenarios_notebook.py
     jupyter nbconvert --to notebook --execute \\

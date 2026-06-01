@@ -4116,3 +4116,17 @@ follow-ups (none blocking the verdict): (1) rebuild C++ BE/CER refs so they tran
 (2) energy-module transition-timing calibration review; (3) the standing M1 macro RNG
 residual. Ensemble run config: N1=100, N2=400, LS0=500000, 32 MC, T=220 (Python) vs
 64 MC C++.
+
+### Task 5.8 addendum — re-verified at matched 64 MC (2026-06-01)
+
+Re-ran the full gate with Python at **64 MC** per scenario (matching the C++
+64-MC references), via `tests/reference/one_nation/RUN_FULL_VERIFICATION_M5.sh`
+(new) — `run_ensemble_M5.py` default bumped 32→64. **Verdict holds: PASS (full).**
+- PRIMARY transition-indicator direction: **48/48 = 100%** (unchanged — robust).
+- Electrification panel levels within ±20%: **36/42 = 86%** (was 38/42=90% at 32 MC;
+  still clears the 80% bar). e.g. T2@2100 panel e Py 0.99 vs C++ 0.95.
+- BE/CER Python-vs-paper: **8/8 = 100%**.
+- TRACKED macro/financial direction 26/36, raw level 19/39 (M1 RNG, not gated).
+`M5_VERIFICATION_RESULT.md` updated to the 64-MC numbers. Findings unchanged
+(C++ BE/CER refs defective → gated vs paper; macro RNG residual). M6 still awaits
+sign-off.

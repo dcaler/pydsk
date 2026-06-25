@@ -2,8 +2,9 @@ name: Deploy docs
 
 # Build the MkDocs user manual and publish it to GitHub Pages.
 #
-# One-time repo setup (Settings → Pages): set "Source" to "GitHub Actions".
-# After that, every push to main that touches the docs republishes the site at
+# The configure-pages step below uses `enablement: true`, so it turns on Pages
+# (Source = GitHub Actions) automatically on the first successful run — no manual
+# Settings step needed. Every push to main that touches the docs then republishes
 #   https://dcaler.github.io/pydsk/
 
 on:
@@ -44,6 +45,8 @@ jobs:
         run: mkdocs build --strict
 
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true   # create/enable the Pages site via API if it doesn't exist yet
 
       - uses: actions/upload-pages-artifact@v3
         with:

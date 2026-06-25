@@ -698,7 +698,7 @@ class ConsumptionGoodFirm(Agent):
         gparams : GlobalParameters
         """
         dim_mach = gparams.machine_size_units
-        b = gparams.payback_threshold
+        payback_threshold = gparams.payback_threshold
         agemax = gparams.machine_max_age
 
         indforn = self.preferred_supplier_idx
@@ -736,7 +736,7 @@ class ConsumptionGoodFirm(Agent):
                     if cost_saving > 0.0:
                         # payback = p1(indforn) / (w/A_old - w/A1_new)
                         payback = p1_new / cost_saving
-                        if payback <= b:
+                        if payback <= payback_threshold:
                             scraped = True
 
                 # --- Age scrapping (only if not already marked for payback scrapping) ---

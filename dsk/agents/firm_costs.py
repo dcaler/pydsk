@@ -55,12 +55,20 @@ def cost_sect1(
     if fine == 0.0 or elfrac_deficit <= 0.0:
         return base
 
-    dummy_lin = elfrac_deficit
+    # Electrification-fine multiplier (C++ dsk_cost_sect1.cpp). rule==2
+    # (Nelson-Winter sqrt shape) penalises the deficit super-linearly via a
+    # sqrt-of-sqrt term plus a constant offset; other rules scale it linearly.
     if rule == 2:
-        mult = (dummy_lin + math.sqrt(math.sqrt(dummy_lin)) * 0.3 + 0.01) * fine
+        sqrt_shape_coef = 0.3      # C++ literal: weight on sqrt(sqrt(deficit))
+        fine_const_offset = 0.01   # C++ dummy_ind: constant added when deficit > 0
+        fine_multiplier = (
+            elfrac_deficit
+            + math.sqrt(math.sqrt(elfrac_deficit)) * sqrt_shape_coef
+            + fine_const_offset
+        ) * fine
     else:
-        mult = dummy_lin * fine
-    return base * (1.0 + mult)
+        fine_multiplier = elfrac_deficit * fine
+    return base * (1.0 + fine_multiplier)
 
 
 def cost_sect2(

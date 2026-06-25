@@ -35,20 +35,21 @@ class BankingSector(AgentSet):
 
     @staticmethod
     def _bounded_pareto_rv(
-        rng: np.random.Generator, a: float, k: float, p: float
+        rng: np.random.Generator, alpha: float, lower_bound: float, upper_bound: float
     ) -> int:
         """Single bounded Pareto integer draw via inverse CDF (C++ bpareto).
 
-        C++ formula: rv = (k^a / (z*(k/p)^a - z + 1))^(1/a), then ceil.
+        C++ formula: rv = (k^a / (z*(k/p)^a - z + 1))^(1/a), then ceil, with
+        a=alpha (shape), k=lower_bound, p=upper_bound.
         Rejects z == 0 or z == 1 (do-while in C++).
         """
-        k_a = k ** a
-        kp_a = (k / p) ** a
+        lower_pow = lower_bound ** alpha
+        bounds_ratio_pow = (lower_bound / upper_bound) ** alpha
         while True:
             z = float(rng.uniform())
             if 0.0 < z < 1.0:
                 break
-        rv = (k_a / (z * kp_a - z + 1.0)) ** (1.0 / a)
+        rv = (lower_pow / (z * bounds_ratio_pow - z + 1.0)) ** (1.0 / alpha)
         return int(math.ceil(rv))
 
     @staticmethod
@@ -56,18 +57,19 @@ class BankingSector(AgentSet):
         rng: np.random.Generator,
         nb: int,
         n2: int,
-        a: float,
-        k: float,
-        p: float,
+        alpha: float,
+        lower_bound: float,
+        upper_bound: float,
         max_attempts: int = 50_000,
     ) -> list:
         """Draw NB client-target integers via bounded Pareto rejection until sum == N2.
 
-        C++ PARETO(): while (sum_NL != N2) { for i=1..NB: NL(i) = bpareto(...) }.
-        Falls back to equal-split when N2 < NB * ceil(k) (geometrically impossible)
-        or after max_attempts exhausted.
+        C++ PARETO(): while (sum_NL != N2) { for i=1..NB: NL(i) = bpareto(a, k, p) },
+        with a=alpha (shape), k=lower_bound, p=upper_bound.
+        Falls back to equal-split when N2 < NB * ceil(lower_bound) (geometrically
+        impossible) or after max_attempts exhausted.
         """
-        min_achievable = nb * int(math.ceil(k))
+        min_achievable = nb * int(math.ceil(lower_bound))
         if n2 < min_achievable:
             base = n2 // nb
             nl = [base] * nb
@@ -75,7 +77,10 @@ class BankingSector(AgentSet):
             return nl
 
         for _ in range(max_attempts):
-            nl = [BankingSector._bounded_pareto_rv(rng, a, k, p) for _ in range(nb)]
+            nl = [
+                BankingSector._bounded_pareto_rv(rng, alpha, lower_bound, upper_bound)
+                for _ in range(nb)
+            ]
             if sum(nl) == n2:
                 return nl
 

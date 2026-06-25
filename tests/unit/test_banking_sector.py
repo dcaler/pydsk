@@ -216,14 +216,20 @@ def test_nb1_equal_split(nation, gparams, nparams_nb1, rng, s2_firms):
 def test_bounded_pareto_rv_within_range():
     """Draws are always in [ceil(k), ceil(p)] = [2, 400]."""
     rng = np.random.default_rng(0)
-    draws = [BankingSector._bounded_pareto_rv(rng, a=0.8, k=2.0, p=400.0) for _ in range(500)]
+    draws = [
+        BankingSector._bounded_pareto_rv(rng, alpha=0.8, lower_bound=2.0, upper_bound=400.0)
+        for _ in range(500)
+    ]
     assert all(2 <= d <= 400 for d in draws), "Pareto draws outside [k, p]"
 
 
 def test_bounded_pareto_rv_integers():
     """Draws are always positive integers (ceil applied)."""
     rng = np.random.default_rng(42)
-    draws = [BankingSector._bounded_pareto_rv(rng, a=0.8, k=2.0, p=400.0) for _ in range(200)]
+    draws = [
+        BankingSector._bounded_pareto_rv(rng, alpha=0.8, lower_bound=2.0, upper_bound=400.0)
+        for _ in range(200)
+    ]
     assert all(isinstance(d, int) and d > 0 for d in draws)
 
 
@@ -234,7 +240,9 @@ def test_bounded_pareto_rv_integers():
 def test_draw_pareto_nl_sum_constraint():
     """Successful _draw_pareto_nl always returns list summing to N2."""
     rng = np.random.default_rng(7)
-    nl = BankingSector._draw_pareto_nl(rng, nb=10, n2=200, a=0.8, k=2.0, p=400.0)
+    nl = BankingSector._draw_pareto_nl(
+        rng, nb=10, n2=200, alpha=0.8, lower_bound=2.0, upper_bound=400.0
+    )
     assert sum(nl) == 200
     assert len(nl) == 10
 
@@ -243,7 +251,9 @@ def test_draw_pareto_nl_impossible_falls_back_to_equal_split():
     """When N2 < NB * ceil(k), falls back to equal split without infinite loop."""
     rng = np.random.default_rng(0)
     # n2=5 < nb*2=20, impossible
-    nl = BankingSector._draw_pareto_nl(rng, nb=10, n2=5, a=0.8, k=2.0, p=400.0)
+    nl = BankingSector._draw_pareto_nl(
+        rng, nb=10, n2=5, alpha=0.8, lower_bound=2.0, upper_bound=400.0
+    )
     assert sum(nl) == 5
     assert len(nl) == 10
     # Equal split: floor(5/10)=0 for each, bank[0] gets remainder 5

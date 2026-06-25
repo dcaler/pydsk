@@ -19,7 +19,8 @@ class GlobalParameters:
     experiment_id: int = 0
 
     # --- §2 dskQE ---
-    bonds_share_of_credit: float = 0.0
+    # NB: bonds_share_of_credit (varphi) is declared once, under §4 Credit-Market
+    # Parameters, with its explanatory comment.
     solvency_weight_in_spread_1: float = 0.5
     solvency_weight_in_spread_2: float = 0.5
 

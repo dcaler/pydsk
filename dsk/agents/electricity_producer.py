@@ -13,41 +13,80 @@ if TYPE_CHECKING:
     from dsk.parameters.global_parameters import GlobalParameters
 
 
-def _electdemand(elf: float, end: float, phi: float, rule: int) -> float:
+# Legacy nonlinear energy-demand shape constants (C++ flag_fuel_to_elec==1 branch of
+# dsk_electdemand.cpp / dsk_ffueldemand.cpp). Hardcoded tuning values; the baseline
+# uses rule 0 or 2, so these only bite under the legacy nonlinear option.
+_LEGACY_NL_ELEC_COEF = 0.7    # electricity-demand coefficient
+_LEGACY_NL_FUEL_COEF = 2.1    # fossil-fuel-demand coefficient
+_LEGACY_NL_SCALE = 0.30       # common scale factor
+
+
+def _electdemand(
+    elec_fraction: float,
+    energy_need: float,
+    fuel_elec_equiv: float,
+    rule: int,
+) -> float:
     """Electricity demand per unit of production for a capital-good firm.
 
     C++ dsk_electdemand.cpp: electdemand(elf, end, phi).
 
-    elf: electrification fraction of the firm's own process (A1p_el)
-    end: energy demand scale (A1p_en, energy need per unit at full fuel use)
-    phi: fuel-to-electricity equivalence (elconv = 0.3)
-    rule: flag_fuel_to_elec (0=linear, 1=nonlinear-old, 2=nonlinear-NW)
+    elec_fraction   : elf — electrified share of the firm's own process (A1p_el)
+    energy_need     : end — energy demand scale (A1p_en, energy need per unit at full fuel use)
+    fuel_elec_equiv : phi — fuel-to-electricity equivalence (elconv = 0.3)
+    rule            : flag_fuel_to_elec (0=linear, 1=nonlinear-old, 2=nonlinear-NW)
     """
     if rule == 0:
-        return end * elf * phi
+        return energy_need * elec_fraction * fuel_elec_equiv
     if rule == 1:
-        return end * (elf * elf + elf) * 0.7 * 0.30
-    # rule == 2
-    if elf >= 1.0:
-        return end  # fully electrified
-    rat = phi * elf / (1.0 - elf)
-    return end * rat / (rat + 2.0 * math.sqrt(phi * rat) + phi) / 2.0
+        return (
+            energy_need
+            * (elec_fraction * elec_fraction + elec_fraction)
+            * _LEGACY_NL_ELEC_COEF
+            * _LEGACY_NL_SCALE
+        )
+    # rule == 2: Nelson-Winter with square root
+    if elec_fraction >= 1.0:
+        return energy_need  # fully electrified
+    ratio = fuel_elec_equiv * elec_fraction / (1.0 - elec_fraction)
+    return (
+        energy_need
+        * ratio
+        / (ratio + 2.0 * math.sqrt(fuel_elec_equiv * ratio) + fuel_elec_equiv)
+        / 2.0
+    )
 
 
-def _ffueldemand(elf: float, end: float, phi: float, rule: int) -> float:
+def _ffueldemand(
+    elec_fraction: float,
+    energy_need: float,
+    fuel_elec_equiv: float,
+    rule: int,
+) -> float:
     """Fossil fuel demand per unit of production for a capital-good firm.
 
     C++ dsk_ffueldemand.cpp: ffueldemand(elf, end, phi).
+    See ``_electdemand`` for the parameter meanings.
     """
     if rule == 0:
-        return end * (1.0 - elf)
+        return energy_need * (1.0 - elec_fraction)
     if rule == 1:
-        return end * ((1.0 - elf) * (1.0 - elf) + (1.0 - elf)) * 2.1 * 0.30
-    # rule == 2
-    if elf >= 1.0:
+        one_minus = 1.0 - elec_fraction
+        return (
+            energy_need
+            * (one_minus * one_minus + one_minus)
+            * _LEGACY_NL_FUEL_COEF
+            * _LEGACY_NL_SCALE
+        )
+    # rule == 2: Nelson-Winter with square root
+    if elec_fraction >= 1.0:
         return 0.0
-    rat = phi * elf / (1.0 - elf)
-    return end / (rat + 2.0 * math.sqrt(phi * rat) + phi) / 2.0
+    ratio = fuel_elec_equiv * elec_fraction / (1.0 - elec_fraction)
+    return (
+        energy_need
+        / (ratio + 2.0 * math.sqrt(fuel_elec_equiv * ratio) + fuel_elec_equiv)
+        / 2.0
+    )
 
 
 def green_plant_cost(
@@ -624,11 +663,11 @@ class ElectricityProducer:
         # (C++ :399-408; only under flag_early_plants>0 & flag_early_plants2==0).
         if flag_early_plants > 0 and flag_early_plants2 == 0:
             if self.brown_plants.total_active_capacity() == 0 and k_dirty > 0:
-                dummy = round(min(
+                extra_green = round(min(
                     min(exp_quota, p.green_replacement_quota) * k_green,
                     max(demand_for_building - k_green, 0.0),
                 ))
-                state.new_green = max(int(dummy), state.new_green)
+                state.new_green = max(int(extra_green), state.new_green)
 
         # Cost-account the precautionary/extra green already counted (C++ :411-446).
         self._account_green_cost(

@@ -1,0 +1,59 @@
+site_name: pydsk — User Manual
+site_description: >-
+  User manual for pydsk, the Python port of the DSK (Dystopian Schumpeter
+  meeting Keynes) climate–macro agent-based model.
+site_url: https://dcaler.github.io/pydsk/
+repo_url: https://github.com/dcaler/pydsk
+repo_name: dcaler/pydsk
+docs_dir: docs
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - toc.follow
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Running simulations: running-simulations.md
+  - Configuration: configuration.md
+  - How the model runs (architecture): architecture.md
+  - Extending the model: extending.md
+  - Output reference: output-reference.md
+  - Fidelity & randomness: fidelity-and-rng.md

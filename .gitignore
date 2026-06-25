@@ -141,3 +141,6 @@ output/
 *.pdf
 # Regenerable verification-data caches (rebuild via the run_*_M*.py scripts)
 tests/reference/**/*.parquet
+
+# MkDocs build output
+site/
